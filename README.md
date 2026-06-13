@@ -3,14 +3,14 @@
 > Transforming 5 years of Valorant pro match data into interactive performance insights, strategic visualizations, and analyst-grade commentary.
 
 [![CI](https://github.com/Narayan-Agarwal/metamind/actions/workflows/ci.yml/badge.svg)](https://github.com/Narayan-Agarwal/metamind/actions)
-[![Streamlit](https://img.shields.io/badge/Streamlit-Live%20Demo-ff4b4b?logo=streamlit)](https://metamind.streamlit.app)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Live%20Demo-ff4b4b?logo=streamlit)](https://metamind-uww554njd8jwjzee7oupfr.streamlit.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
 ## 📌 Live Demo
 
-🔗 **[metamind.streamlit.app](https://metamind.streamlit.app)** *(deployment pending)*
+🔗 **[metamind-uww554njd8jwjzee7oupfr.streamlit.app](https://metamind-uww554njd8jwjzee7oupfr.streamlit.app/)**
 
 ---
 
