@@ -1,0 +1,60 @@
+# MetaMind Configuration
+# No credentials in this file — DB_URL is in .env (local) or Streamlit Secrets (cloud)
+
+# VLR.gg South Asia event stat URLs for scraping
+vlr:
+  event_urls:
+    - https://www.vlr.gg/event/stats/1966/omen-challengers-league-2024-south-asia-split-1
+    - https://www.vlr.gg/event/stats/2073/challengers-league-2024-south-asia-split-2
+    - https://www.vlr.gg/event/stats/1525/challengers-south-asia-2023-split-1
+    - https://www.vlr.gg/event/stats/1689/challengers-south-asia-2023-split-2
+  request_delay_seconds: 2
+  user_agent: "MetaMind Analytics/1.0 (esports research project)"
+
+# ETL settings
+etl:
+  batch_size: 1000
+  chunk_size: 50000         # for reading large CSVs
+  outlier_thresholds:
+    acs_max: 600
+    kills_max: 60
+  min_matches_consistency: 8
+  min_matches_leaderboard: 5
+
+# Scheduler
+schedule:
+  daily_etl_hour: 3        # UTC
+  daily_etl_minute: 0
+
+# Data paths (relative to project root)
+data:
+  root: data/
+  family_a_folders:
+    - data/vct_2021
+    - data/vct_2022
+    - data/vct_2023
+    - data/vct_2024
+    - data/vct_2025
+    - data/vct_2026
+  family_c_folders:
+    - "data/Champions Tour 2024 Americas Kickoff_csvs"
+    - "data/Champions Tour 2024 Americas Stage 1_csvs"
+    - "data/Champions Tour 2024 Americas Stage 2_csvs"
+    - "data/Champions Tour 2024 EMEA Kickoff_csvs"
+    - "data/Champions Tour 2024 EMEA Stage 1_csvs"
+    - "data/Champions Tour 2024 EMEA Stage 2_csvs"
+    - "data/Champions Tour 2024 Pacific Kickoff_csvs"
+    - "data/Champions Tour 2024 Pacific Stage 1_csvs"
+    - "data/Champions Tour 2024 Pacific Stage 2_csvs"
+    - "data/Champions Tour 2024 China Kickoff_csvs"
+    - "data/Champions Tour 2024 China Stage 1_csvs"
+    - "data/Champions Tour 2024 China Stage 2_csvs"
+    - "data/Champions Tour 2024 Masters Madrid_csvs"
+    - "data/Champions Tour 2024 Masters Shanghai_csvs"
+    - "data/Valorant Champions 2024_csvs"
+  family_c_root: data/      # VCT Champions 2025 Paris (root-level CSVs)
+
+# Dashboard
+dashboard:
+  cache_ttl: 3600           # seconds
+  page_size: 25             # leaderboard pagination

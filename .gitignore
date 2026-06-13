@@ -1,0 +1,40 @@
+# Environment and secrets
+.env
+*.env
+
+# Neon / database
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Data files — too large for git, already local
+data/vct_2021/
+data/vct_2022/
+data/vct_2023/
+data/vct_2024/
+data/vct_2025/
+data/vct_2026/
+data/all_ids/
+data/Champions Tour*/
+data/Valorant Champions*/
+data/*.csv
+data/README.md
+data/columns_description.csv
