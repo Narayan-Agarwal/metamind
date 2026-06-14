@@ -16,26 +16,17 @@ load_dotenv()
 def get_db_url() -> str:
     """Get database URL from environment, supporting both local .env and Streamlit Cloud.
 
-    Resolution order:
-        1. ``DB_URL`` environment variable (set via .env or shell).
-        2. Streamlit secrets  (``[database] DB_URL`` in secrets.toml).
-
     Returns:
         str: A valid SQLAlchemy database URL.
 
     Raises:
         ValueError: If no database URL can be resolved from any source.
     """
-    db_url: str | None = os.environ.get("DB_URL")
-
-    if not db_url:
-        # Fallback: try Streamlit secrets (available on Streamlit Cloud)
-        try:
-            import streamlit as st  # noqa: WPS433 — conditional import
-
-            db_url = st.secrets.get("database", {}).get("DB_URL")
-        except Exception:  # noqa: BLE001 — broad catch intentional
-            pass
+    try:
+        import streamlit as st
+        db_url = st.secrets["DB_URL"]
+    except Exception:
+        db_url = os.environ.get("DB_URL")
 
     if not db_url:
         raise ValueError(
@@ -52,7 +43,13 @@ def get_engine():
     Returns:
         sqlalchemy.engine.Engine: Configured engine instance.
     """
-    return create_engine(get_db_url(), pool_pre_ping=True, pool_size=5)
+    return create_engine(
+        get_db_url(), 
+        pool_pre_ping=True, 
+        pool_size=5, 
+        max_overflow=10, 
+        pool_recycle=300, # Recycle connections every 5 minutes
+    )
 
 
 def get_session():
