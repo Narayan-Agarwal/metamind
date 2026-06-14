@@ -364,8 +364,8 @@ with right_col:
     st.markdown("### Agent Performance")
 
     if not agent_data.empty:
-        display_df = agent_data[["agent", "matches_played", "avg_acs", "avg_kd", "win_rate"]].copy()
-        display_df.columns = ["Agent", "Matches", "Avg ACS", "Avg K/D", "Win Rate %"]
+        display_df = agent_data[["agent", "matches_played", "avg_acs", "avg_kd"]].copy()
+        display_df.columns = ["Agent", "Matches", "Avg ACS", "Avg K/D"]
         display_df = display_df.sort_values("Avg ACS", ascending=False)
         st.dataframe(
             display_df,

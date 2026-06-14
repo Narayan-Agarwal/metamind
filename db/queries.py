@@ -5,9 +5,8 @@ Every public function accepts a SQLAlchemy ``Engine`` (plus optional
 filter parameters), executes a parameterised query via :func:`pandas.read_sql`,
 and returns a :class:`pandas.DataFrame`.
 
-When called from Streamlit pages the caller is expected to wrap these
-functions with ``@st.cache_data(ttl=3600)``; the functions themselves
-are framework-agnostic.
+All functions wrap queries in try/except and return empty DataFrames on failure
+so Streamlit pages never crash.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from sqlalchemy.engine import Engine
 def get_all_players(engine: Engine) -> pd.DataFrame:
     try:
         sql = text("""
-            SELECT p.player_id, p.name, t.name as team, p.region
+            SELECT p.player_id, p.name, t.name AS team, p.region
             FROM players p
             LEFT JOIN teams t ON p.team_id = t.team_id
             ORDER BY p.name
@@ -32,6 +31,7 @@ def get_all_players(engine: Engine) -> pd.DataFrame:
         return pd.read_sql(sql, engine)
     except Exception:
         return pd.DataFrame()
+
 
 def get_all_teams(engine: Engine) -> pd.DataFrame:
     try:
@@ -44,6 +44,7 @@ def get_all_teams(engine: Engine) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
 
+
 def get_all_tournaments(engine: Engine) -> pd.DataFrame:
     try:
         sql = text("""
@@ -54,6 +55,7 @@ def get_all_tournaments(engine: Engine) -> pd.DataFrame:
         return pd.read_sql(sql, engine)
     except Exception:
         return pd.DataFrame()
+
 
 # =========================================================================
 # Player analytics
@@ -94,12 +96,15 @@ def get_player_career_stats(
                 ps.first_kills,
                 ps.first_deaths,
                 ps.adr,
+                ps.hs_percent,
+                ps.rating,
                 m.match_date,
                 m.tournament_id,
                 m.map_id,
-                m.map_name
+                mp.map_name
             FROM player_stats ps
             JOIN matches m ON ps.match_id = m.match_id
+            LEFT JOIN maps mp ON m.map_id = mp.map_id
             WHERE {where_clause}
             ORDER BY m.match_date
         """)
@@ -191,12 +196,8 @@ def get_player_agent_breakdown(
                 AVG(ps.deaths)                    AS avg_deaths,
                 AVG(ps.assists)                   AS avg_assists,
                 AVG(ps.kast)                      AS avg_kast,
-                AVG(ps.adr)                       AS avg_adr,
-                AVG(CASE WHEN m.winner_team_id = p.team_id
-                         THEN 1.0 ELSE 0.0 END)  AS win_rate
+                AVG(ps.adr)                       AS avg_adr
             FROM player_stats ps
-            JOIN matches m ON ps.match_id = m.match_id
-            JOIN players p ON ps.player_id = p.player_id
             WHERE ps.player_id = :player_id
             GROUP BY ps.agent
             ORDER BY matches_played DESC
@@ -225,6 +226,7 @@ def get_compare_players(
     except Exception:
         return pd.DataFrame()
 
+
 # =========================================================================
 # Team analytics
 # =========================================================================
@@ -235,7 +237,7 @@ def get_team_kpis(
     tournament_id: int | None = None,
 ) -> pd.DataFrame:
     try:
-        conditions = ["(m.team_a_id = :team_id OR m.team_b_id = :team_id)"]
+        conditions = ["(m.team1_id = :team_id OR m.team2_id = :team_id)"]
         params: dict = {"team_id": team_id}
 
         if tournament_id is not None:
@@ -249,14 +251,10 @@ def get_team_kpis(
                 COUNT(*)                                                     AS total_matches,
                 AVG(CASE WHEN m.winner_team_id = :team_id
                          THEN 1.0 ELSE 0.0 END)                             AS overall_win_rate,
-                AVG(CASE WHEN m.team_a_id = :team_id THEN m.team_a_rounds
-                         ELSE m.team_b_rounds END)                           AS avg_rounds_won,
-                AVG(CASE WHEN m.team_a_id = :team_id THEN m.team_b_rounds
-                         ELSE m.team_a_rounds END)                           AS avg_rounds_lost,
-                AVG(CASE WHEN m.team_a_id = :team_id THEN m.team_a_attack_pct
-                         ELSE m.team_b_attack_pct END)                       AS attack_win_pct,
-                AVG(CASE WHEN m.team_a_id = :team_id THEN m.team_a_defense_pct
-                         ELSE m.team_b_defense_pct END)                      AS defense_win_pct
+                AVG(CASE WHEN m.team1_id = :team_id THEN m.team1_score
+                         ELSE m.team2_score END)                             AS avg_rounds_won,
+                AVG(CASE WHEN m.team1_id = :team_id THEN m.team2_score
+                         ELSE m.team1_score END)                             AS avg_rounds_lost
             FROM matches m
             WHERE {where_clause}
         """)
@@ -272,7 +270,7 @@ def get_team_map_winrates(engine: Engine, team_id: int) -> pd.DataFrame:
             SELECT *
             FROM mv_team_map_winrates
             WHERE team_id = :team_id
-            ORDER BY win_rate DESC
+            ORDER BY win_pct DESC
         """)
         return pd.read_sql(sql, engine, params={"team_id": team_id})
     except Exception:
@@ -296,17 +294,19 @@ def get_team_economy(
 
         sql = text(f"""
             SELECT
-                m.map_name,
-                AVG(es.pistol_won * 50.0)    AS avg_pistol_win_pct,
-                AVG(es.eco_won)              AS avg_eco_win_pct,
-                AVG(es.full_buy_won)         AS avg_full_buy_win_pct,
-                AVG(es.semi_buy_won)         AS avg_force_buy_win_pct,
-                COUNT(*)                     AS matches_played
+                mp.map_name,
+                AVG(es.pistol_won)       AS pistol_win_pct,
+                AVG(es.eco_won)          AS eco_win_pct,
+                AVG(es.full_buy_won)     AS full_buy_win_pct,
+                AVG(es.semi_buy_won)     AS semi_buy_win_pct,
+                AVG(es.semi_eco_won)     AS semi_eco_win_pct,
+                COUNT(*)                 AS matches_played
             FROM economy_stats es
             JOIN matches m ON es.match_id = m.match_id
+            LEFT JOIN maps mp ON es.map_id = mp.map_id
             WHERE {where_clause}
-            GROUP BY m.map_name
-            ORDER BY m.map_name
+            GROUP BY mp.map_name
+            ORDER BY mp.map_name
         """)
 
         return pd.read_sql(sql, engine, params=params)
@@ -334,6 +334,7 @@ def get_team_players(engine: Engine, team_id: int) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
 
+
 # =========================================================================
 # Leaderboard & global
 # =========================================================================
@@ -350,7 +351,7 @@ def get_leaderboard(
         # Whitelist sort columns to prevent SQL injection
         allowed_sort = {
             "avg_acs", "avg_kd", "avg_kills", "avg_kast",
-            "avg_fb", "avg_adr", "consistency_score", "matches_played",
+            "avg_fb", "avg_hs", "consistency_score", "matches_played",
         }
         if sort_by not in allowed_sort:
             sort_by = "avg_acs"
@@ -376,6 +377,7 @@ def get_leaderboard(
     except Exception:
         return pd.DataFrame()
 
+
 def get_regional_comparison(engine: Engine) -> pd.DataFrame:
     try:
         sql = text("""
@@ -390,6 +392,7 @@ def get_regional_comparison(engine: Engine) -> pd.DataFrame:
                 AVG(ps.first_kills)          AS avg_first_kills
             FROM players p
             JOIN player_stats ps ON p.player_id = ps.player_id
+            WHERE p.region IS NOT NULL
             GROUP BY p.region
             ORDER BY avg_acs DESC
         """)
@@ -404,7 +407,7 @@ def get_indian_spotlight(engine: Engine) -> pd.DataFrame:
             SELECT
                 p.player_id,
                 p.name,
-                t.name as team,
+                t.name AS team,
                 AVG(ps.acs)       AS avg_acs,
                 AVG(ps.kd_ratio)  AS avg_kd,
                 COUNT(*)          AS matches_played

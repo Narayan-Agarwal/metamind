@@ -130,13 +130,13 @@ if not kpis.empty:
     kpi_cols = st.columns(4)
 
     with kpi_cols[0]:
-        render_kpi_card("Overall Win Rate", f"{k.get('win_rate', 0):.1f}%")
+        render_kpi_card("Overall Win Rate", f"{k.get('overall_win_rate', 0) * 100:.1f}%")
     with kpi_cols[1]:
         render_kpi_card("Avg Rounds Won", f"{k.get('avg_rounds_won', 0):.1f}")
     with kpi_cols[2]:
-        render_kpi_card("Attack Win %", f"{k.get('attack_win_pct', 0):.1f}%")
+        render_kpi_card("Avg Rounds Lost", f"{k.get('avg_rounds_lost', 0):.1f}")
     with kpi_cols[3]:
-        render_kpi_card("Defense Win %", f"{k.get('defense_win_pct', 0):.1f}%")
+        render_kpi_card("Total Matches", f"{int(k.get('total_matches', 0))}")
 
 # ════════════════════════════════════════════════════════════════════
 # Section B — Map Win Rate bar chart
@@ -360,8 +360,8 @@ if not economy.empty:
 
 if not kpis.empty:
     k = kpis.iloc[0]
-    team_data["attack_win_pct"] = float(k.get("attack_win_pct", 0))
-    team_data["defense_win_pct"] = float(k.get("defense_win_pct", 0))
+    team_data["overall_win_rate"] = float(k.get("overall_win_rate", 0))
+    team_data["total_matches"] = int(k.get("total_matches", 0))
 
 insights = generate_team_insights(team_data)
 if insights:
