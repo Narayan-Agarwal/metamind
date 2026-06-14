@@ -24,9 +24,10 @@ from sqlalchemy.engine import Engine
 def get_all_players(engine: Engine) -> pd.DataFrame:
     try:
         sql = text("""
-            SELECT player_id, name, team, region
-            FROM players
-            ORDER BY name
+            SELECT p.player_id, p.name, t.name as team, p.region
+            FROM players p
+            LEFT JOIN teams t ON p.team_id = t.team_id
+            ORDER BY p.name
         """)
         return pd.read_sql(sql, engine)
     except Exception:
@@ -284,7 +285,7 @@ def get_team_economy(
     tournament_id: int | None = None,
 ) -> pd.DataFrame:
     try:
-        conditions = ["te.team_id = :team_id"]
+        conditions = ["es.team_id = :team_id"]
         params: dict = {"team_id": team_id}
 
         if tournament_id is not None:
@@ -296,13 +297,13 @@ def get_team_economy(
         sql = text(f"""
             SELECT
                 m.map_name,
-                AVG(te.pistol_win_pct)     AS avg_pistol_win_pct,
-                AVG(te.eco_win_pct)        AS avg_eco_win_pct,
-                AVG(te.full_buy_win_pct)   AS avg_full_buy_win_pct,
-                AVG(te.force_buy_win_pct)  AS avg_force_buy_win_pct,
-                COUNT(*)                   AS matches_played
-            FROM team_economy te
-            JOIN matches m ON te.match_id = m.match_id
+                AVG(es.pistol_won * 50.0)    AS avg_pistol_win_pct,
+                AVG(es.eco_won)              AS avg_eco_win_pct,
+                AVG(es.full_buy_won)         AS avg_full_buy_win_pct,
+                AVG(es.semi_buy_won)         AS avg_force_buy_win_pct,
+                COUNT(*)                     AS matches_played
+            FROM economy_stats es
+            JOIN matches m ON es.match_id = m.match_id
             WHERE {where_clause}
             GROUP BY m.map_name
             ORDER BY m.map_name
@@ -403,15 +404,16 @@ def get_indian_spotlight(engine: Engine) -> pd.DataFrame:
             SELECT
                 p.player_id,
                 p.name,
-                p.team,
+                t.name as team,
                 AVG(ps.acs)       AS avg_acs,
                 AVG(ps.kd_ratio)  AS avg_kd,
                 COUNT(*)          AS matches_played
             FROM players p
+            LEFT JOIN teams t ON p.team_id = t.team_id
             JOIN player_stats ps ON p.player_id = ps.player_id
             WHERE LOWER(p.nationality) = 'indian'
                OR LOWER(p.region) = 'india'
-            GROUP BY p.player_id, p.name, p.team
+            GROUP BY p.player_id, p.name, t.name
             HAVING COUNT(*) >= 5
             ORDER BY avg_acs DESC
             LIMIT 3
