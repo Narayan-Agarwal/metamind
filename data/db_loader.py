@@ -1,22 +1,21 @@
 """
-MetaMind — SQLAlchemy-based database loader.
+MetaMind -- SQLAlchemy-based database loader (v2 - bulk).
 
-Upserts cleaned ETL data into the PostgreSQL schema (8 core tables +
-2 materialized views). Uses batch commits and raw SQL ``INSERT … ON
-CONFLICT UPDATE`` for idempotent loads.
+Eliminates per-row DB round-trips by pre-loading all entity caches
+in bulk SELECTs, then using raw connection.execute() with explicit
+transaction boundaries and batched multi-row INSERTs.
 
 All database access goes through ``db.connection.get_engine()``.
 """
 
 import logging
-import os
+import time
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker
 
 from db.connection import get_engine
 
@@ -26,361 +25,192 @@ logger = logging.getLogger(__name__)
 _LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
 
-# Default batch size for commits
-_BATCH_SIZE = 1000
+# Batch size for commits (smaller = less chance of Neon timeout)
+_BATCH_SIZE = 500
+
+# Sleep between batches to avoid overwhelming Neon connection pooler
+_BATCH_SLEEP = 1.0
 
 
 # ---------------------------------------------------------------------------
-# get_or_create helpers
+# In-memory caches (populated by _preload_caches, updated on insert)
 # ---------------------------------------------------------------------------
-
-def get_or_create_team(
-    session: Session,
-    name: str,
-    region: str | None = None,
-) -> int:
-    """Return existing team_id or create a new team.
-
-    Args:
-        session: Active SQLAlchemy session.
-        name: Team name (unique key).
-        region: Optional region tag.
-
-    Returns:
-        The ``team_id`` of the found or created team.
-    """
-    row = session.execute(
-        text("SELECT team_id FROM teams WHERE name = :name"),
-        {"name": name},
-    ).fetchone()
-
-    if row:
-        return row[0]
-
-    result = session.execute(
-        text(
-            "INSERT INTO teams (name, region) VALUES (:name, :region) "
-            "ON CONFLICT (name) DO UPDATE SET region = COALESCE(EXCLUDED.region, teams.region) "
-            "RETURNING team_id"
-        ),
-        {"name": name, "region": region},
-    )
-    session.flush()
-    return result.fetchone()[0]
+_team_cache: dict[str, int] = {}       # name -> team_id
+_player_cache: dict[str, int] = {}     # name -> player_id
+_tournament_cache: dict[str, int] = {} # name -> tournament_id
+_map_cache: dict[str, int] = {}        # map_name -> map_id
+_match_cache: set[int] = set()         # set of known match_ids
 
 
-def get_or_create_player(
-    session: Session,
-    name: str,
-    team_id: int | None = None,
-    region: str | None = None,
-    nationality: str | None = None,
-    source: str = "kaggle",
-) -> int:
-    """Return existing player_id or create a new player.
+def _preload_caches(conn) -> None:
+    """Bulk-load all existing entities into Python dicts with one SELECT each."""
+    global _team_cache, _player_cache, _tournament_cache, _map_cache, _match_cache
 
-    Args:
-        session: Active SQLAlchemy session.
-        name: Player name (unique key).
-        team_id: Optional FK to teams table.
-        region: Optional region tag.
-        nationality: Optional nationality tag.
-        source: Data source identifier.
+    _team_cache = {}
+    rows = conn.execute(text("SELECT team_id, name FROM teams")).fetchall()
+    for row in rows:
+        _team_cache[row[1]] = row[0]
+    logger.info("Pre-loaded %d teams into cache", len(_team_cache))
 
-    Returns:
-        The ``player_id`` of the found or created player.
-    """
-    row = session.execute(
-        text("SELECT player_id FROM players WHERE name = :name"),
-        {"name": name},
-    ).fetchone()
+    _player_cache = {}
+    rows = conn.execute(text("SELECT player_id, name FROM players")).fetchall()
+    for row in rows:
+        _player_cache[row[1]] = row[0]
+    logger.info("Pre-loaded %d players into cache", len(_player_cache))
 
-    if row:
-        return row[0]
+    _tournament_cache = {}
+    rows = conn.execute(text("SELECT tournament_id, name FROM tournaments")).fetchall()
+    for row in rows:
+        _tournament_cache[row[1]] = row[0]
+    logger.info("Pre-loaded %d tournaments into cache", len(_tournament_cache))
 
-    result = session.execute(
-        text(
-            "INSERT INTO players (name, name_normalized, team_id, region, nationality, source) "
-            "VALUES (:name, :name_normalized, :team_id, :region, :nationality, :source) "
-            "ON CONFLICT (name) DO UPDATE SET "
-            "  team_id = COALESCE(EXCLUDED.team_id, players.team_id), "
-            "  region = COALESCE(EXCLUDED.region, players.region), "
-            "  nationality = COALESCE(EXCLUDED.nationality, players.nationality) "
-            "RETURNING player_id"
-        ),
-        {
-            "name": name,
-            "name_normalized": name.lower().strip(),
-            "team_id": team_id,
-            "region": region,
-            "nationality": nationality,
-            "source": source,
-        },
-    )
-    session.flush()
-    return result.fetchone()[0]
+    _map_cache = {}
+    rows = conn.execute(text("SELECT map_id, map_name FROM maps")).fetchall()
+    for row in rows:
+        _map_cache[row[1]] = row[0]
+    logger.info("Pre-loaded %d maps into cache", len(_map_cache))
 
-
-def get_or_create_tournament(
-    session: Session,
-    name: str,
-    year: int | None = None,
-    region: str | None = None,
-    tier: str | None = None,
-) -> int:
-    """Return existing tournament_id or create a new tournament.
-
-    Args:
-        session: Active SQLAlchemy session.
-        name: Tournament name.
-        year: Tournament year.
-        region: Regional tag.
-        tier: Tier classification.
-
-    Returns:
-        The ``tournament_id``.
-    """
-    row = session.execute(
-        text(
-            "SELECT tournament_id FROM tournaments "
-            "WHERE name = :name AND (year = :year OR (year IS NULL AND :year IS NULL))"
-        ),
-        {"name": name, "year": year},
-    ).fetchone()
-
-    if row:
-        return row[0]
-
-    result = session.execute(
-        text(
-            "INSERT INTO tournaments (name, year, region, tier) "
-            "VALUES (:name, :year, :region, :tier) "
-            "RETURNING tournament_id"
-        ),
-        {"name": name, "year": year, "region": region, "tier": tier},
-    )
-    session.flush()
-    return result.fetchone()[0]
-
-
-def get_or_create_map(session: Session, map_name: str) -> int:
-    """Return existing map_id or create a new map entry.
-
-    Args:
-        session: Active SQLAlchemy session.
-        map_name: Map name (unique key).
-
-    Returns:
-        The ``map_id``.
-    """
-    row = session.execute(
-        text("SELECT map_id FROM maps WHERE map_name = :map_name"),
-        {"map_name": map_name},
-    ).fetchone()
-
-    if row:
-        return row[0]
-
-    result = session.execute(
-        text(
-            "INSERT INTO maps (map_name) VALUES (:map_name) "
-            "ON CONFLICT (map_name) DO NOTHING "
-            "RETURNING map_id"
-        ),
-        {"map_name": map_name},
-    )
-    session.flush()
-    new_row = result.fetchone()
-    if new_row:
-        return new_row[0]
-
-    # Race condition fallback — re-fetch
-    row = session.execute(
-        text("SELECT map_id FROM maps WHERE map_name = :map_name"),
-        {"map_name": map_name},
-    ).fetchone()
-    return row[0]
+    _match_cache = set()
+    rows = conn.execute(text("SELECT match_id FROM matches")).fetchall()
+    for row in rows:
+        _match_cache.add(row[0])
+    logger.info("Pre-loaded %d matches into cache", len(_match_cache))
 
 
 # ---------------------------------------------------------------------------
-# Upsert functions
+# Bulk-insert helpers for dimension tables
+# Each opens its own short transaction, inserts, commits, closes.
 # ---------------------------------------------------------------------------
 
-def upsert_match(session: Session, match_data: dict[str, Any]) -> int:
-    """Insert or update a match record.
+def _ensure_teams(conn, names: set[str]) -> None:
+    """Insert any teams not already in cache. Updates cache with new IDs."""
+    new_names = [n for n in names if n and n != "nan" and n not in _team_cache]
+    if not new_names:
+        return
 
-    Args:
-        session: Active SQLAlchemy session.
-        match_data: Dictionary with keys matching the ``matches`` table columns.
+    for batch_start in range(0, len(new_names), _BATCH_SIZE):
+        batch = new_names[batch_start:batch_start + _BATCH_SIZE]
+        params = [{"name": n, "region": None} for n in batch]
+        conn.execute(
+            text(
+                "INSERT INTO teams (name, region) VALUES (:name, :region) "
+                "ON CONFLICT (name) DO NOTHING"
+            ),
+            params,
+        )
+        conn.commit()
 
-    Returns:
-        The ``match_id``.
-    """
-    result = session.execute(
-        text("""
-            INSERT INTO matches
-                (tournament_id, team1_id, team2_id, map_id, match_date,
-                 winner_team_id, team1_score, team2_score, source)
-            VALUES
-                (:tournament_id, :team1_id, :team2_id, :map_id, :match_date,
-                 :winner_team_id, :team1_score, :team2_score, :source)
-            ON CONFLICT (match_id) DO UPDATE SET
-                winner_team_id = EXCLUDED.winner_team_id,
-                team1_score = EXCLUDED.team1_score,
-                team2_score = EXCLUDED.team2_score
-            RETURNING match_id
-        """),
-        match_data,
-    )
-    session.flush()
-    return result.fetchone()[0]
+    # Re-fetch all to get IDs (including pre-existing)
+    rows = conn.execute(text("SELECT team_id, name FROM teams")).fetchall()
+    for row in rows:
+        _team_cache[row[1]] = row[0]
+    logger.info("Teams cache now has %d entries", len(_team_cache))
 
 
-def upsert_player_stats(session: Session, stats_data: dict[str, Any]) -> None:
-    """Insert or update a player_stats record.
+def _ensure_players(conn, names: set[str]) -> None:
+    """Insert any players not already in cache. Updates cache with new IDs."""
+    new_names = [n for n in names if n and n != "nan" and n not in _player_cache]
+    if not new_names:
+        return
 
-    Uses ``ON CONFLICT (match_id, player_id) DO UPDATE``.
+    for batch_start in range(0, len(new_names), _BATCH_SIZE):
+        batch = new_names[batch_start:batch_start + _BATCH_SIZE]
+        params = [
+            {"name": n, "name_normalized": n.lower().strip(), "source": "kaggle"}
+            for n in batch
+        ]
+        conn.execute(
+            text(
+                "INSERT INTO players (name, name_normalized, source) "
+                "VALUES (:name, :name_normalized, :source) "
+                "ON CONFLICT (name) DO NOTHING"
+            ),
+            params,
+        )
+        conn.commit()
 
-    Args:
-        session: Active SQLAlchemy session.
-        stats_data: Dictionary with keys matching the ``player_stats`` columns.
-    """
-    session.execute(
-        text("""
-            INSERT INTO player_stats
-                (match_id, player_id, kills, deaths, assists, acs,
-                 kd_ratio, kast, adr, first_kills, first_deaths,
-                 hs_percent, clutch_pct, rating, agent)
-            VALUES
-                (:match_id, :player_id, :kills, :deaths, :assists, :acs,
-                 :kd_ratio, :kast, :adr, :first_kills, :first_deaths,
-                 :hs_percent, :clutch_pct, :rating, :agent)
-            ON CONFLICT (match_id, player_id) DO UPDATE SET
-                kills = EXCLUDED.kills,
-                deaths = EXCLUDED.deaths,
-                assists = EXCLUDED.assists,
-                acs = EXCLUDED.acs,
-                kd_ratio = EXCLUDED.kd_ratio,
-                kast = EXCLUDED.kast,
-                adr = EXCLUDED.adr,
-                first_kills = EXCLUDED.first_kills,
-                first_deaths = EXCLUDED.first_deaths,
-                hs_percent = EXCLUDED.hs_percent,
-                clutch_pct = EXCLUDED.clutch_pct,
-                rating = EXCLUDED.rating,
-                agent = EXCLUDED.agent
-        """),
-        stats_data,
-    )
+    rows = conn.execute(text("SELECT player_id, name FROM players")).fetchall()
+    for row in rows:
+        _player_cache[row[1]] = row[0]
+    logger.info("Players cache now has %d entries", len(_player_cache))
 
 
-def upsert_map_results(session: Session, results_data: dict[str, Any]) -> None:
-    """Insert or update a map_results record.
+def _ensure_tournaments(conn, names: set[str]) -> None:
+    """Insert any tournaments not already in cache. Updates cache with new IDs."""
+    new_names = [n for n in names if n and n != "nan" and n not in _tournament_cache]
+    if not new_names:
+        return
 
-    Uses ``ON CONFLICT (match_id, team_id) DO UPDATE``.
+    for batch_start in range(0, len(new_names), _BATCH_SIZE):
+        batch = new_names[batch_start:batch_start + _BATCH_SIZE]
+        params = [{"name": n} for n in batch]
+        conn.execute(
+            text(
+                "INSERT INTO tournaments (name) VALUES (:name) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            params,
+        )
+        conn.commit()
 
-    Args:
-        session: Active SQLAlchemy session.
-        results_data: Dictionary with keys matching the ``map_results`` columns.
-    """
-    session.execute(
-        text("""
-            INSERT INTO map_results
-                (match_id, team_id, map_id, rounds_won, side_start, outcome)
-            VALUES
-                (:match_id, :team_id, :map_id, :rounds_won, :side_start, :outcome)
-            ON CONFLICT (match_id, team_id) DO UPDATE SET
-                rounds_won = EXCLUDED.rounds_won,
-                side_start = EXCLUDED.side_start,
-                outcome = EXCLUDED.outcome
-        """),
-        results_data,
-    )
-
-
-def upsert_economy_stats(session: Session, econ_data: dict[str, Any]) -> None:
-    """Insert or update an economy_stats record.
-
-    Uses ``ON CONFLICT (match_id, team_id) DO UPDATE``.
-
-    Args:
-        session: Active SQLAlchemy session.
-        econ_data: Dictionary with keys matching the ``economy_stats`` columns.
-    """
-    session.execute(
-        text("""
-            INSERT INTO economy_stats
-                (match_id, team_id, map_id, pistol_won, eco_won,
-                 semi_eco_won, semi_buy_won, full_buy_won)
-            VALUES
-                (:match_id, :team_id, :map_id, :pistol_won, :eco_won,
-                 :semi_eco_won, :semi_buy_won, :full_buy_won)
-            ON CONFLICT (match_id, team_id) DO UPDATE SET
-                pistol_won = EXCLUDED.pistol_won,
-                eco_won = EXCLUDED.eco_won,
-                semi_eco_won = EXCLUDED.semi_eco_won,
-                semi_buy_won = EXCLUDED.semi_buy_won,
-                full_buy_won = EXCLUDED.full_buy_won
-        """),
-        econ_data,
-    )
+    rows = conn.execute(text("SELECT tournament_id, name FROM tournaments")).fetchall()
+    for row in rows:
+        _tournament_cache[row[1]] = row[0]
+    logger.info("Tournaments cache now has %d entries", len(_tournament_cache))
 
 
-def upsert_performance_stats(session: Session, perf_data: dict[str, Any]) -> None:
-    """Insert or update a performance_stats record.
+def _ensure_maps(conn, names: set[str]) -> None:
+    """Insert any maps not already in cache. Updates cache with new IDs."""
+    new_names = [n for n in names if n and n != "nan" and n not in _map_cache]
+    if not new_names:
+        return
 
-    Uses ``ON CONFLICT (match_id, player_id) DO UPDATE``.
+    for batch_start in range(0, len(new_names), _BATCH_SIZE):
+        batch = new_names[batch_start:batch_start + _BATCH_SIZE]
+        params = [{"map_name": n} for n in batch]
+        conn.execute(
+            text(
+                "INSERT INTO maps (map_name) VALUES (:map_name) "
+                "ON CONFLICT (map_name) DO NOTHING"
+            ),
+            params,
+        )
+        conn.commit()
 
-    Args:
-        session: Active SQLAlchemy session.
-        perf_data: Dictionary with keys matching the ``performance_stats`` columns.
-    """
-    session.execute(
-        text("""
-            INSERT INTO performance_stats
-                (match_id, player_id, map_id, kills_2k, kills_3k,
-                 kills_4k, kills_5k, clutch_1v1, clutch_1v2,
-                 clutch_1v3, clutch_1v4, clutch_1v5)
-            VALUES
-                (:match_id, :player_id, :map_id, :kills_2k, :kills_3k,
-                 :kills_4k, :kills_5k, :clutch_1v1, :clutch_1v2,
-                 :clutch_1v3, :clutch_1v4, :clutch_1v5)
-            ON CONFLICT (match_id, player_id) DO UPDATE SET
-                kills_2k = EXCLUDED.kills_2k,
-                kills_3k = EXCLUDED.kills_3k,
-                kills_4k = EXCLUDED.kills_4k,
-                kills_5k = EXCLUDED.kills_5k,
-                clutch_1v1 = EXCLUDED.clutch_1v1,
-                clutch_1v2 = EXCLUDED.clutch_1v2,
-                clutch_1v3 = EXCLUDED.clutch_1v3,
-                clutch_1v4 = EXCLUDED.clutch_1v4,
-                clutch_1v5 = EXCLUDED.clutch_1v5
-        """),
-        perf_data,
-    )
+    rows = conn.execute(text("SELECT map_id, map_name FROM maps")).fetchall()
+    for row in rows:
+        _map_cache[row[1]] = row[0]
+    logger.info("Maps cache now has %d entries", len(_map_cache))
+
+
+def _ensure_matches(conn, match_ids: set[int], tournament_lookup: dict[int, int | None]) -> None:
+    """Insert placeholder matches for any match_ids not in cache."""
+    new_ids = [mid for mid in match_ids if mid not in _match_cache]
+    if not new_ids:
+        return
+
+    for batch_start in range(0, len(new_ids), _BATCH_SIZE):
+        batch = new_ids[batch_start:batch_start + _BATCH_SIZE]
+        params = [
+            {"match_id": mid, "tournament_id": tournament_lookup.get(mid)}
+            for mid in batch
+        ]
+        conn.execute(
+            text(
+                "INSERT INTO matches (match_id, tournament_id) "
+                "VALUES (:match_id, :tournament_id) "
+                "ON CONFLICT (match_id) DO NOTHING"
+            ),
+            params,
+        )
+        conn.commit()
+
+    _match_cache.update(new_ids)
+    logger.info("Matches cache now has %d entries", len(_match_cache))
 
 
 # ---------------------------------------------------------------------------
-# Materialized view refresh
-# ---------------------------------------------------------------------------
-
-def refresh_views(engine: Engine) -> None:
-    """Refresh both materialized views.
-
-    Args:
-        engine: SQLAlchemy engine.
-    """
-    logger.info("Refreshing materialized views …")
-    with engine.begin() as conn:
-        conn.execute(text("REFRESH MATERIALIZED VIEW mv_player_percentiles"))
-        logger.info("  ✓ mv_player_percentiles refreshed")
-        conn.execute(text("REFRESH MATERIALIZED VIEW mv_team_map_winrates"))
-        logger.info("  ✓ mv_team_map_winrates refreshed")
-    logger.info("Materialized view refresh complete")
-
-
-# ---------------------------------------------------------------------------
-# Master load orchestrator
+# Safe type converters
 # ---------------------------------------------------------------------------
 
 def _safe_int(value: Any) -> int | None:
@@ -403,18 +233,234 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Materialized view refresh
+# ---------------------------------------------------------------------------
+
+def refresh_views(engine: Engine) -> None:
+    """Refresh both materialized views.
+
+    Args:
+        engine: SQLAlchemy engine.
+    """
+    logger.info("Refreshing materialized views...")
+    with engine.connect() as conn:
+        conn.execute(text("REFRESH MATERIALIZED VIEW mv_player_percentiles"))
+        conn.commit()
+        logger.info("  [OK] mv_player_percentiles refreshed")
+        conn.execute(text("REFRESH MATERIALIZED VIEW mv_team_map_winrates"))
+        conn.commit()
+        logger.info("  [OK] mv_team_map_winrates refreshed")
+    logger.info("Materialized view refresh complete")
+
+
+# ---------------------------------------------------------------------------
+# Build row dicts from DataFrames (no DB calls, pure Python)
+# ---------------------------------------------------------------------------
+
+def _build_player_stats_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Convert a player stats DataFrame into a list of insert-ready dicts."""
+    rows = []
+    for _, r in df.iterrows():
+        match_id_val = _safe_int(r.get("match_id", r.get("Match ID")))
+        if match_id_val is None:
+            continue
+
+        player_name = str(r.get("player_name_normalized", "")).strip()
+        if not player_name or player_name == "nan":
+            continue
+
+        player_id = _player_cache.get(player_name)
+        if player_id is None:
+            continue
+
+        agent = str(r.get("agents", r.get("agent", ""))).strip()
+
+        rows.append({
+            "match_id": match_id_val,
+            "player_id": player_id,
+            "kills": _safe_int(r.get("kills")),
+            "deaths": _safe_int(r.get("deaths")),
+            "assists": _safe_int(r.get("assists")),
+            "acs": _safe_float(r.get("acs")),
+            "kd_ratio": _safe_float(r.get("kd_ratio")),
+            "kast": _safe_float(r.get("kast")),
+            "adr": _safe_float(r.get("adr")),
+            "first_kills": _safe_int(r.get("first_kills", r.get("fkpr"))),
+            "first_deaths": _safe_int(r.get("first_deaths", r.get("fdpr"))),
+            "hs_percent": _safe_float(r.get("hs_percent")),
+            "clutch_pct": _safe_float(r.get("clutch_pct")),
+            "rating": _safe_float(r.get("rating")),
+            "agent": agent if agent and agent != "nan" else None,
+        })
+    return rows
+
+
+def _build_economy_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Convert an economy DataFrame into a list of insert-ready dicts."""
+    rows = []
+    for _, r in df.iterrows():
+        match_id_val = _safe_int(r.get("match_id", r.get("Match ID")))
+        if match_id_val is None:
+            continue
+
+        team_name = str(r.get("Team", r.get("team", ""))).strip()
+        team_id = _team_cache.get(team_name) if team_name and team_name != "nan" else None
+
+        map_name = str(r.get("map", r.get("map_name", r.get("Map", "")))).strip()
+        map_id = _map_cache.get(map_name) if map_name and map_name != "nan" else None
+
+        rows.append({
+            "match_id": match_id_val,
+            "team_id": team_id,
+            "map_id": map_id,
+            "pistol_won": _safe_int(r.get("Pistol Won", r.get("pistol_won"))),
+            "eco_won": _safe_int(r.get("Eco (won)", r.get("eco_won"))),
+            "semi_eco_won": _safe_int(r.get("Semi-eco (won)", r.get("semi_eco_won"))),
+            "semi_buy_won": _safe_int(r.get("Semi-buy (won)", r.get("semi_buy_won"))),
+            "full_buy_won": _safe_int(r.get("Full buy(won)", r.get("full_buy_won"))),
+        })
+    return rows
+
+
+def _build_performance_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Convert a performance DataFrame into a list of insert-ready dicts."""
+    rows = []
+    for _, r in df.iterrows():
+        match_id_val = _safe_int(r.get("match_id", r.get("Match ID")))
+        if match_id_val is None:
+            continue
+
+        player_name = str(r.get("Player", r.get("player_name_normalized", ""))).strip()
+        player_id = _player_cache.get(player_name) if player_name and player_name != "nan" else None
+
+        map_name = str(r.get("Map", r.get("map_name", ""))).strip()
+        map_id = _map_cache.get(map_name) if map_name and map_name != "nan" else None
+
+        rows.append({
+            "match_id": match_id_val,
+            "player_id": player_id,
+            "map_id": map_id,
+            "kills_2k": _safe_int(r.get("2K", r.get("2k"))),
+            "kills_3k": _safe_int(r.get("3K", r.get("3k"))),
+            "kills_4k": _safe_int(r.get("4K", r.get("4k"))),
+            "kills_5k": _safe_int(r.get("5K", r.get("5k"))),
+            "clutch_1v1": _safe_int(r.get("1v1", r.get("clutch_1v1"))),
+            "clutch_1v2": _safe_int(r.get("1v2", r.get("clutch_1v2"))),
+            "clutch_1v3": _safe_int(r.get("1v3", r.get("clutch_1v3"))),
+            "clutch_1v4": _safe_int(r.get("1v4", r.get("clutch_1v4"))),
+            "clutch_1v5": _safe_int(r.get("1v5", r.get("clutch_1v5"))),
+        })
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Batch insert with explicit short transactions
+# ---------------------------------------------------------------------------
+
+_PLAYER_STATS_SQL = text("""
+    INSERT INTO player_stats
+        (match_id, player_id, kills, deaths, assists, acs, kd_ratio,
+         kast, adr, first_kills, first_deaths, hs_percent, clutch_pct, rating, agent)
+    VALUES
+        (:match_id, :player_id, :kills, :deaths, :assists, :acs, :kd_ratio,
+         :kast, :adr, :first_kills, :first_deaths, :hs_percent, :clutch_pct, :rating, :agent)
+    ON CONFLICT (match_id, player_id) DO UPDATE SET
+        kills = EXCLUDED.kills,
+        deaths = EXCLUDED.deaths,
+        assists = EXCLUDED.assists,
+        acs = EXCLUDED.acs,
+        kd_ratio = EXCLUDED.kd_ratio,
+        kast = EXCLUDED.kast,
+        adr = EXCLUDED.adr,
+        first_kills = EXCLUDED.first_kills,
+        first_deaths = EXCLUDED.first_deaths,
+        hs_percent = EXCLUDED.hs_percent,
+        clutch_pct = EXCLUDED.clutch_pct,
+        rating = EXCLUDED.rating,
+        agent = COALESCE(player_stats.agent, EXCLUDED.agent)
+""")
+
+_ECONOMY_STATS_SQL = text("""
+    INSERT INTO economy_stats
+        (match_id, team_id, map_id, pistol_won, eco_won,
+         semi_eco_won, semi_buy_won, full_buy_won)
+    VALUES
+        (:match_id, :team_id, :map_id, :pistol_won, :eco_won,
+         :semi_eco_won, :semi_buy_won, :full_buy_won)
+    ON CONFLICT (match_id, team_id) DO UPDATE SET
+        pistol_won = EXCLUDED.pistol_won,
+        eco_won = EXCLUDED.eco_won,
+        semi_eco_won = EXCLUDED.semi_eco_won,
+        semi_buy_won = EXCLUDED.semi_buy_won,
+        full_buy_won = EXCLUDED.full_buy_won
+""")
+
+_PERFORMANCE_STATS_SQL = text("""
+    INSERT INTO performance_stats
+        (match_id, player_id, map_id,
+         kills_2k, kills_3k, kills_4k, kills_5k,
+         clutch_1v1, clutch_1v2, clutch_1v3, clutch_1v4, clutch_1v5)
+    VALUES
+        (:match_id, :player_id, :map_id,
+         :kills_2k, :kills_3k, :kills_4k, :kills_5k,
+         :clutch_1v1, :clutch_1v2, :clutch_1v3, :clutch_1v4, :clutch_1v5)
+    ON CONFLICT (match_id, player_id) DO UPDATE SET
+        kills_2k = EXCLUDED.kills_2k,
+        kills_3k = EXCLUDED.kills_3k,
+        kills_4k = EXCLUDED.kills_4k,
+        kills_5k = EXCLUDED.kills_5k,
+        clutch_1v1 = EXCLUDED.clutch_1v1,
+        clutch_1v2 = EXCLUDED.clutch_1v2,
+        clutch_1v3 = EXCLUDED.clutch_1v3,
+        clutch_1v4 = EXCLUDED.clutch_1v4,
+        clutch_1v5 = EXCLUDED.clutch_1v5
+""")
+
+
+def _batch_execute(engine: Engine, sql_stmt, rows: list[dict], label: str) -> int:
+    """Execute INSERT in batches of _BATCH_SIZE with explicit commits and sleeps."""
+    total = len(rows)
+    inserted = 0
+
+    for batch_start in range(0, total, _BATCH_SIZE):
+        batch = rows[batch_start:batch_start + _BATCH_SIZE]
+        
+        # Grab a fresh connection for just this batch
+        with engine.begin() as conn:
+            conn.execute(text("SET statement_timeout = '30s'"))
+            conn.execute(sql_stmt, batch)
+            
+        inserted += len(batch)
+        logger.info(
+            "  %s: committed %d/%d rows",
+            label, inserted, total,
+        )
+        if batch_start + _BATCH_SIZE < total:
+            time.sleep(_BATCH_SLEEP)
+
+    return inserted
+
+
+# ---------------------------------------------------------------------------
+# Master load orchestrator
+# ---------------------------------------------------------------------------
+
 def load_all(
     engine: Engine | None = None,
     etl_data: dict[str, pd.DataFrame] | None = None,
 ) -> dict[str, int]:
     """Orchestrate all upserts from ETL-cleaned DataFrames.
 
-    Iterates over each dataset, resolves FK references via
-    ``get_or_create_*`` helpers, and batch-commits every
-    ``_BATCH_SIZE`` rows.
+    Strategy:
+      1. Pre-load all dimension caches in 5 bulk SELECTs
+      2. Scan DataFrames to collect unique entity names (pure Python)
+      3. Bulk-insert missing dimension rows in short transactions
+      4. Build insert-ready row dicts using cached IDs (pure Python)
+      5. Batch-insert fact rows with explicit commits and sleeps
 
     Args:
-        engine: SQLAlchemy engine.  Defaults to ``db.connection.get_engine()``.
+        engine: SQLAlchemy engine. Defaults to ``db.connection.get_engine()``.
         etl_data: Dictionary of cleaned DataFrames from ``etl.run_etl()``.
 
     Returns:
@@ -425,9 +471,6 @@ def load_all(
     if etl_data is None:
         etl_data = {}
 
-    SessionFactory = sessionmaker(bind=engine)
-    session: Session = SessionFactory()
-
     counts: dict[str, int] = {
         "teams": 0,
         "players": 0,
@@ -435,204 +478,143 @@ def load_all(
         "maps": 0,
         "matches": 0,
         "player_stats": 0,
-        "map_results": 0,
         "economy_stats": 0,
         "performance_stats": 0,
     }
 
     try:
-        # --- Player stats datasets ---
+        # ---- Phase 1: Pre-load caches ----
+        logger.info("Phase 1: Pre-loading entity caches...")
+        with engine.begin() as conn:
+            conn.execute(text("SET statement_timeout = '30s'"))
+            _preload_caches(conn)
+
+        # ---- Phase 2: Collect unique entity names from all DataFrames ----
+        logger.info("Phase 2: Scanning DataFrames for unique entities...")
+        all_teams: set[str] = set()
+        all_players: set[str] = set()
+        all_tournaments: set[str] = set()
+        all_maps: set[str] = set()
+        all_match_ids: set[int] = set()
+        match_tournament_map: dict[int, str] = {}
+
         for key, df in etl_data.items():
-            if "player_stats" not in key and "overview" not in key:
-                continue
-            if "player_name" not in df.columns and "player_name_normalized" not in df.columns:
-                continue
+            for col in ["team", "Team"]:
+                if col in df.columns:
+                    vals = df[col].dropna().astype(str).str.strip().unique()
+                    all_teams.update(v for v in vals if v and v != "nan")
 
-            logger.info("Loading player stats from: %s (%d rows)", key, len(df))
-            name_col = (
-                "player_name_normalized"
-                if "player_name_normalized" in df.columns
-                else "player_name"
-            )
+            for col in ["player_name_normalized", "player_name", "Player"]:
+                if col in df.columns:
+                    vals = df[col].dropna().astype(str).str.strip().unique()
+                    all_players.update(v for v in vals if v and v != "nan")
 
-            for idx, row in df.iterrows():
-                player_name = str(row.get(name_col, "")).strip()
-                if not player_name or player_name == "nan":
-                    continue
+            if "tournament" in df.columns:
+                vals = df["tournament"].dropna().astype(str).str.strip().unique()
+                all_tournaments.update(v for v in vals if v and v != "nan")
 
-                # Resolve FKs
-                team_name = str(row.get("team", "")).strip()
-                team_id = None
-                if team_name and team_name != "nan":
-                    team_id = get_or_create_team(
-                        session, team_name,
-                        region=row.get("player_region"),
-                    )
-                    counts["teams"] += 1
+            for col in ["map_name", "Map", "map"]:
+                if col in df.columns:
+                    vals = df[col].dropna().astype(str).str.strip().unique()
+                    all_maps.update(v for v in vals if v and v != "nan")
 
-                player_id = get_or_create_player(
-                    session, player_name,
-                    team_id=team_id,
-                    region=row.get("player_region"),
-                    nationality=row.get("nationality"),
-                    source=row.get("source", "kaggle"),
-                )
-                counts["players"] += 1
+            for col in ["match_id", "Match ID"]:
+                if col in df.columns:
+                    for _, r in df[[col]].dropna().iterrows():
+                        mid = _safe_int(r[col])
+                        if mid is not None:
+                            all_match_ids.add(mid)
 
-                tournament_name = str(row.get("tournament", row.get("source_folder", ""))).strip()
-                tournament_id = None
-                if tournament_name and tournament_name != "nan":
-                    tournament_id = get_or_create_tournament(session, tournament_name)
-                    counts["tournaments"] += 1
+            if "match_id" in df.columns and "tournament" in df.columns:
+                for _, r in df[["match_id", "tournament"]].dropna().iterrows():
+                    mid = _safe_int(r["match_id"])
+                    t = str(r["tournament"]).strip()
+                    if mid is not None and t and t != "nan":
+                        match_tournament_map[mid] = t
 
-                map_name = str(row.get("map_name", "")).strip()
-                map_id = None
-                if map_name and map_name != "nan":
-                    map_id = get_or_create_map(session, map_name)
-                    counts["maps"] += 1
+        logger.info(
+            "Found: %d teams, %d players, %d tournaments, %d maps, %d matches",
+            len(all_teams), len(all_players), len(all_tournaments),
+            len(all_maps), len(all_match_ids),
+        )
 
-                # Upsert player stat
-                agent = str(row.get("agents", row.get("agent", ""))).strip()
-                stats = {
-                    "match_id": _safe_int(row.get("match_id")),
-                    "player_id": player_id,
-                    "kills": _safe_int(row.get("kills")),
-                    "deaths": _safe_int(row.get("deaths")),
-                    "assists": _safe_int(row.get("assists")),
-                    "acs": _safe_float(row.get("acs")),
-                    "kd_ratio": _safe_float(row.get("kd_ratio")),
-                    "kast": _safe_float(row.get("kast")),
-                    "adr": _safe_float(row.get("adr")),
-                    "first_kills": _safe_int(row.get("first_kills")),
-                    "first_deaths": _safe_int(row.get("first_deaths")),
-                    "hs_percent": _safe_float(row.get("hs_percent")),
-                    "clutch_pct": _safe_float(row.get("clutch_pct")),
-                    "rating": _safe_float(row.get("rating")),
-                    "agent": agent if agent and agent != "nan" else None,
-                }
+        # ---- Phase 3: Bulk-insert dimension entities ----
+        logger.info("Phase 3: Ensuring dimension entities exist...")
+        with engine.begin() as conn:
+            conn.execute(text("SET statement_timeout = '30s'"))
+            _ensure_teams(conn, all_teams)
+            counts["teams"] = len(all_teams)
 
-                # Only upsert if we have a match_id
-                if stats["match_id"] is not None:
-                    upsert_player_stats(session, stats)
-                    counts["player_stats"] += 1
+            _ensure_players(conn, all_players)
+            counts["players"] = len(all_players)
 
-                # Batch commit
-                if (idx + 1) % _BATCH_SIZE == 0:
-                    session.commit()
-                    logger.info(
-                        "  Committed batch at row %d for %s", idx + 1, key,
-                    )
+            _ensure_tournaments(conn, all_tournaments)
+            counts["tournaments"] = len(all_tournaments)
 
-            session.commit()
-            logger.info("  ✓ Finished %s", key)
+            _ensure_maps(conn, all_maps)
+            counts["maps"] = len(all_maps)
 
-        # --- Economy datasets ---
+            match_tid_lookup: dict[int, int | None] = {}
+            for mid, tname in match_tournament_map.items():
+                match_tid_lookup[mid] = _tournament_cache.get(tname)
+
+            _ensure_matches(conn, all_match_ids, match_tid_lookup)
+            counts["matches"] = len(all_match_ids)
+
+        logger.info("All dimensions seeded successfully")
+
+        # ---- Phase 4: Build row dicts (pure Python, no DB) ----
+        logger.info("Phase 4: Building insert rows from DataFrames...")
+
+        ps_rows: list[dict] = []
+        econ_rows: list[dict] = []
+        perf_rows: list[dict] = []
+
         for key, df in etl_data.items():
-            if "economy" not in key.lower() and "eco" not in key.lower():
-                continue
-            if "Team" not in df.columns and "team" not in df.columns:
-                continue
+            if "player_stats" in key or "overview" in key:
+                built = _build_player_stats_rows(df)
+                logger.info("  %s: %d player_stats rows built", key, len(built))
+                ps_rows.extend(built)
 
-            logger.info("Loading economy stats from: %s (%d rows)", key, len(df))
-            team_col = "Team" if "Team" in df.columns else "team"
+            if "economy_data" in key or "eco_stats" in key:
+                built = _build_economy_rows(df)
+                logger.info("  %s: %d economy rows built", key, len(built))
+                econ_rows.extend(built)
 
-            for idx, row in df.iterrows():
-                team_name = str(row.get(team_col, "")).strip()
-                if not team_name or team_name == "nan":
-                    continue
+            if "performance_data" in key or "kills_stats" in key:
+                built = _build_performance_rows(df)
+                logger.info("  %s: %d performance rows built", key, len(built))
+                perf_rows.extend(built)
 
-                team_id = get_or_create_team(session, team_name)
+        logger.info(
+            "Total rows to insert: %d player_stats, %d economy, %d performance",
+            len(ps_rows), len(econ_rows), len(perf_rows),
+        )
 
-                map_name = str(row.get("map", row.get("map_name", row.get("Map", "")))).strip()
-                map_id = None
-                if map_name and map_name != "nan":
-                    map_id = get_or_create_map(session, map_name)
+        # ---- Phase 5: Batch insert fact rows ----
+        logger.info("Phase 5: Batch inserting fact rows...")
 
-                econ = {
-                    "match_id": _safe_int(row.get("match_id")),
-                    "team_id": team_id,
-                    "map_id": map_id,
-                    "pistol_won": _safe_int(row.get("Pistol Won", row.get("pistol_won"))),
-                    "eco_won": _safe_int(row.get("Eco (won)", row.get("eco_won"))),
-                    "semi_eco_won": _safe_int(row.get("Semi-eco (won)", row.get("semi_eco_won"))),
-                    "semi_buy_won": _safe_int(row.get("Semi-buy (won)", row.get("semi_buy_won"))),
-                    "full_buy_won": _safe_int(row.get("Full buy(won)", row.get("full_buy_won"))),
-                }
+        if ps_rows:
+            n = _batch_execute(engine, _PLAYER_STATS_SQL, ps_rows, "player_stats")
+            counts["player_stats"] = n
 
-                if econ["match_id"] is not None:
-                    upsert_economy_stats(session, econ)
-                    counts["economy_stats"] += 1
+        if econ_rows:
+            n = _batch_execute(engine, _ECONOMY_STATS_SQL, econ_rows, "economy_stats")
+            counts["economy_stats"] = n
 
-                if (idx + 1) % _BATCH_SIZE == 0:
-                    session.commit()
-
-            session.commit()
-            logger.info("  ✓ Finished %s", key)
-
-        # --- Performance datasets ---
-        for key, df in etl_data.items():
-            if "performance" not in key.lower() and "kills_stats" not in key.lower():
-                continue
-
-            logger.info("Loading performance stats from: %s (%d rows)", key, len(df))
-
-            for idx, row in df.iterrows():
-                player_name = str(
-                    row.get("Player", row.get("player_name", row.get("player_name_normalized", "")))
-                ).strip()
-                if not player_name or player_name == "nan":
-                    continue
-
-                player_id = get_or_create_player(session, player_name)
-
-                map_name = str(row.get("Map", row.get("map_name", ""))).strip()
-                map_id = None
-                if map_name and map_name != "nan":
-                    map_id = get_or_create_map(session, map_name)
-
-                perf = {
-                    "match_id": _safe_int(row.get("match_id", row.get("Match ID"))),
-                    "player_id": player_id,
-                    "map_id": map_id,
-                    "kills_2k": _safe_int(row.get("2K", row.get("2k"))),
-                    "kills_3k": _safe_int(row.get("3K", row.get("3k"))),
-                    "kills_4k": _safe_int(row.get("4K", row.get("4k"))),
-                    "kills_5k": _safe_int(row.get("5K", row.get("5k"))),
-                    "clutch_1v1": _safe_int(row.get("1v1")),
-                    "clutch_1v2": _safe_int(row.get("1v2")),
-                    "clutch_1v3": _safe_int(row.get("1v3")),
-                    "clutch_1v4": _safe_int(row.get("1v4")),
-                    "clutch_1v5": _safe_int(row.get("1v5")),
-                }
-
-                if perf["match_id"] is not None:
-                    upsert_performance_stats(session, perf)
-                    counts["performance_stats"] += 1
-
-                if (idx + 1) % _BATCH_SIZE == 0:
-                    session.commit()
-
-            session.commit()
-            logger.info("  ✓ Finished %s", key)
-
-        # --- Refresh materialized views ---
-        try:
-            refresh_views(engine)
-        except Exception:
-            logger.exception("Failed to refresh materialized views — data is loaded but views are stale")
+        if perf_rows:
+            n = _batch_execute(engine, _PERFORMANCE_STATS_SQL, perf_rows, "performance_stats")
+            counts["performance_stats"] = n
 
     except Exception:
-        session.rollback()
-        logger.exception("Database load failed — transaction rolled back")
+        logger.exception("Database load failed")
         raise
-    finally:
-        session.close()
 
     # --- Summary ---
     logger.info("=" * 60)
     logger.info("Database load summary:")
     for table, count in counts.items():
-        logger.info("  %-25s %8d operations", table, count)
+        logger.info("  %-25s %8d", table, count)
     logger.info("=" * 60)
 
     return counts

@@ -88,21 +88,18 @@ def _read_csv_safe(
         return None
 
 
-def load_family_a(data_root: Path) -> dict[str, pd.DataFrame]:
-    """Load all Family A datasets (vct_2021 … vct_2026).
+def yield_family_a(data_root: Path):
+    """Yield Family A datasets (vct_2021 … vct_2026) one folder at a time.
 
     Args:
         data_root: Absolute path to the MetaMind project root.
 
-    Returns:
-        Dictionary keyed by ``"{folder}_{file_key}"`` → DataFrame.
-        Missing / unreadable files are silently skipped.
+    Yields:
+        Tuple of (folder_name, dict_of_dataframes).
     """
     config = _load_config(data_root)
     chunk_size: int = config.get("etl", {}).get("chunk_size", 50_000)
     folders: list[str] = config.get("data", {}).get("family_a_folders", [])
-
-    result: dict[str, pd.DataFrame] = {}
 
     for folder_rel in folders:
         folder_path = data_root / folder_rel
@@ -113,6 +110,7 @@ def load_family_a(data_root: Path) -> dict[str, pd.DataFrame]:
             continue
 
         logger.info("Loading Family A folder: %s", folder_name)
+        result: dict[str, pd.DataFrame] = {}
 
         for key, rel_csv in _FAMILY_A_FILES.items():
             csv_path = folder_path / rel_csv
@@ -129,7 +127,7 @@ def load_family_a(data_root: Path) -> dict[str, pd.DataFrame]:
                     before = len(df)
                     df = df[df["Side"] == "both"].copy()
                     logger.info(
-                        "Filtered %s overview Side='both': %d → %d rows",
+                        "Filtered %s overview Side='both': %d -> %d rows",
                         folder_name,
                         before,
                         len(df),
@@ -139,8 +137,36 @@ def load_family_a(data_root: Path) -> dict[str, pd.DataFrame]:
                 df["source_folder"] = folder_name
                 result[f"{folder_name}_{key}"] = df
 
-    logger.info("Family A load complete — %d datasets", len(result))
-    return result
+        # --- Merge Match ID into Family A match-level datasets ---
+        ids_key = f"{folder_name}_tournament_ids"
+        if ids_key in result:
+            ids_df = result[ids_key]
+            join_cols = ["Tournament", "Stage", "Match Type", "Match Name", "Map"]
+            # Get unique mapping of match IDs
+            if all(c in ids_df.columns for c in join_cols + ["Match ID"]):
+                mapping_df = ids_df[join_cols + ["Match ID"]].drop_duplicates()
+                
+                # Merge into overview
+                ov_key = f"{folder_name}_overview"
+                if ov_key in result:
+                    result[ov_key] = pd.merge(result[ov_key], mapping_df, on=join_cols, how="left")
+                    logger.info("Merged Match ID into %s", ov_key)
+                
+                # Merge into eco_stats
+                eco_key = f"{folder_name}_eco_stats"
+                if eco_key in result:
+                    # eco_stats doesn't always have Map, wait! The spec says it has: Tournament,Stage,Match Type,Match Name,Map,Team...
+                    # So we can use the same join cols.
+                    result[eco_key] = pd.merge(result[eco_key], mapping_df, on=join_cols, how="left")
+                    logger.info("Merged Match ID into %s", eco_key)
+
+                # Merge into kills_stats
+                kills_key = f"{folder_name}_kills_stats"
+                if kills_key in result:
+                    result[kills_key] = pd.merge(result[kills_key], mapping_df, on=join_cols, how="left")
+                    logger.info("Merged Match ID into %s", kills_key)
+
+        yield folder_name, result
 
 
 # ---------------------------------------------------------------------------
@@ -183,20 +209,18 @@ def _load_family_c_folder(
     return result
 
 
-def load_family_c(data_root: Path) -> dict[str, pd.DataFrame]:
-    """Load all Family C datasets (CT2024 folders + root-level CSVs).
+def yield_family_c(data_root: Path):
+    """Yield Family C datasets (CT2024 folders + root-level CSVs) one folder at a time.
 
     Args:
         data_root: Absolute path to the MetaMind project root.
 
-    Returns:
-        Dictionary keyed by ``"{source}_{file_key}"`` → DataFrame.
+    Yields:
+        Tuple of (folder_name, dict_of_dataframes).
     """
     config = _load_config(data_root)
     folders: list[str] = config.get("data", {}).get("family_c_folders", [])
     root_csv_dir: str = config.get("data", {}).get("family_c_root", "data/")
-
-    result: dict[str, pd.DataFrame] = {}
 
     # --- CT2024 sub-folders ---
     for folder_rel in folders:
@@ -208,46 +232,66 @@ def load_family_c(data_root: Path) -> dict[str, pd.DataFrame]:
             continue
 
         logger.info("Loading Family C folder: %s", folder_label)
-        result.update(_load_family_c_folder(folder_path, folder_label))
+        yield folder_label, _load_family_c_folder(folder_path, folder_label)
 
     # --- Root-level CSVs (VCT Champions 2025 Paris) ---
     root_path = data_root / root_csv_dir
     if root_path.is_dir():
         logger.info("Loading Family C root-level CSVs from: %s", root_path)
-        result.update(_load_family_c_folder(root_path, "vct_champions_2025_root"))
+        yield "vct_champions_2025_root", _load_family_c_folder(root_path, "vct_champions_2025_root")
     else:
         logger.warning("Family C root CSV directory missing: %s", root_path)
-
-    logger.info("Family C load complete — %d datasets", len(result))
-    return result
 
 
 # ---------------------------------------------------------------------------
 # Combined loader
 # ---------------------------------------------------------------------------
 
-def load_all(data_root: Path | str | None = None) -> dict[str, pd.DataFrame]:
-    """Load all datasets from both families.
+def yield_all_folders(data_root: Path | str | None = None):
+    """Yield all datasets from both families folder by folder.
 
     Args:
         data_root: Project root path.  Defaults to two levels up from this file.
 
-    Returns:
-        Combined dictionary of all loaded DataFrames.
+    Yields:
+        Tuple of (folder_name, dictionary_of_dataframes).
     """
     if data_root is None:
         data_root = Path(__file__).resolve().parent.parent
     data_root = Path(data_root)
 
-    logger.info("Starting full data load from: %s", data_root)
+    logger.info("Starting streaming data load from: %s", data_root)
 
-    combined: dict[str, pd.DataFrame] = {}
-    combined.update(load_family_a(data_root))
-    combined.update(load_family_c(data_root))
+    yield from yield_family_a(data_root)
+    yield from yield_family_c(data_root)
 
-    logger.info(
-        "Full load complete — %d total datasets, %d total rows",
-        len(combined),
-        sum(len(df) for df in combined.values()),
-    )
-    return combined
+
+def load_single_folder(
+    folder_name: str,
+    data_root: Path | str | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Load a specific dataset folder by name.
+
+    Args:
+        folder_name: The target folder to load (e.g. 'vct_2021').
+        data_root: Project root path.
+
+    Returns:
+        Dictionary of loaded DataFrames.
+    """
+    if data_root is None:
+        data_root = Path(__file__).resolve().parent.parent
+    data_root = Path(data_root)
+    
+    # Try yielding from Family A
+    for name, dfs in yield_family_a(data_root):
+        if name == folder_name:
+            return dfs
+            
+    # Try yielding from Family C
+    for name, dfs in yield_family_c(data_root):
+        if name == folder_name:
+            return dfs
+            
+    logger.warning("Folder %s not found in Family A or C", folder_name)
+    return {}

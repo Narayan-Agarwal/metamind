@@ -217,14 +217,14 @@ SELECT
     m.map_name,
     COUNT(*)                                                           AS games_played,
     SUM(CASE WHEN mr.outcome = 'win' THEN 1 ELSE 0 END)               AS wins,
-    ROUND(AVG(CASE WHEN mr.outcome = 'win' THEN 1.0 ELSE 0 END) * 100, 1)
+    ROUND((AVG(CASE WHEN mr.outcome = 'win' THEN 1.0 ELSE 0 END) * 100)::numeric, 1)
                                                                        AS win_pct,
     ROUND(AVG(CASE WHEN mr.side_start = 'attack'
-        THEN mr.rounds_won END), 1)                                    AS avg_atk_rounds,
+        THEN mr.rounds_won END)::numeric, 1)                                    AS avg_atk_rounds,
     ROUND(AVG(CASE WHEN mr.side_start = 'defense'
-        THEN mr.rounds_won END), 1)                                    AS avg_def_rounds,
-    ROUND(AVG(es.pistol_won::float /
-        NULLIF(es.pistol_won + (2 - es.pistol_won), 0) * 100), 1)     AS pistol_win_pct
+        THEN mr.rounds_won END)::numeric, 1)                                    AS avg_def_rounds,
+    ROUND((AVG(es.pistol_won::numeric /
+        NULLIF(es.pistol_won + (2 - es.pistol_won), 0) * 100))::numeric, 1)     AS pistol_win_pct
 FROM map_results mr
 JOIN maps m ON mr.map_id = m.map_id
 LEFT JOIN economy_stats es

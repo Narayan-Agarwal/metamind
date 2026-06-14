@@ -20,7 +20,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from data.fetch.kaggle_loader import load_all as load_kaggle_all
+from data.fetch.kaggle_loader import yield_all_folders, load_single_folder
 from data.fetch.vlr_scraper import scrape_vlr_events
 
 logger = logging.getLogger(__name__)
@@ -66,9 +66,9 @@ _FAMILY_A_COLUMN_MAP: dict[str, str] = {
     "Kills": "kills",
     "Deaths": "deaths",
     "Assists": "assists",
-    "First Kills": "first_kills",
     "First Deaths": "first_deaths",
     "Map": "map_name",
+    "Match ID": "match_id",
 }
 
 
@@ -400,19 +400,26 @@ def deduplicate(
             "map_name",
             "match_id",
         ]
-    # Only use columns that exist
+    
+    # We require at least one key column to deduplicate.
+    # We will dynamically find which subset columns are actually present.
     key_cols = [c for c in subset if c in df.columns]
-    if not key_cols:
-        logger.warning("No key columns found for deduplication — skipping")
+    
+    if len(key_cols) < 2:
+        # If we only have 0 or 1 key column, it's too risky to deduplicate.
+        # e.g., we don't want to deduplicate just on "match_id" without player_name,
+        # otherwise we delete all but one player from the match.
+        logger.debug("Not enough key columns found for deduplication %s — skipping", key_cols)
         return df
 
     before = len(df)
     df = df.drop_duplicates(subset=key_cols, keep="first")
     after = len(df)
-    logger.info(
-        "Deduplication on %s: %d → %d rows (%d removed)",
-        key_cols, before, after, before - after,
-    )
+    if before > after:
+        logger.info(
+            "Deduplication on %s: %d -> %d rows (%d removed)",
+            key_cols, before, after, before - after,
+        )
     return df
 
 
@@ -420,29 +427,59 @@ def deduplicate(
 # 9. run_etl — master orchestrator
 # ---------------------------------------------------------------------------
 
+def process_folder_data(
+    raw_data: dict[str, pd.DataFrame],
+    data_root: Path,
+    aliases_path: Path,
+    indian_path: Path,
+) -> dict[str, pd.DataFrame]:
+    """Clean, normalise, and deduplicate a dictionary of DataFrames."""
+    cleaned: dict[str, pd.DataFrame] = {}
+    
+    # Stage 2: Normalise columns
+    for key, df in raw_data.items():
+        if any(key.startswith(f"vct_{y}") for y in range(2021, 2027)):
+            df = normalize_family_a(df)
+        else:
+            df = normalize_family_c(df)
+        cleaned[key] = df
+
+    # Stage 3: Clean percentages & parse economy
+    for key, df in cleaned.items():
+        cleaned[key] = clean_percentages(df)
+        if "economy" in key.lower() or "eco" in key.lower():
+            cleaned[key] = parse_economy_data(cleaned[key])
+
+    # Stage 4: Normalise player names
+    for key, df in cleaned.items():
+        if "player_name" in df.columns:
+            cleaned[key] = clean_names(df, aliases_path)
+
+    # Stage 5: Validate ranges
+    for key, df in cleaned.items():
+        cleaned[key] = validate_ranges(df, data_root)
+
+    # Stage 6: Tag nationality
+    for key, df in cleaned.items():
+        if "player_name_normalized" in df.columns:
+            cleaned[key] = tag_nationality(df, indian_path)
+
+    # Stage 7: Deduplicate
+    for key, df in cleaned.items():
+        cleaned[key] = deduplicate(df)
+
+    return cleaned
+
+
 def run_etl(
     data_root: Path | str | None = None,
     *,
     full: bool = False,
-) -> dict[str, pd.DataFrame]:
-    """Run the full ETL pipeline.
-
-    Stages:
-        1. Load raw data (Kaggle + optionally VLR.gg)
-        2. Normalise column names per family
-        3. Clean percentages and economy composites
-        4. Normalise player names via aliases
-        5. Validate ranges (cap outliers)
-        6. Tag nationality
-        7. Deduplicate
-
-    Args:
-        data_root: Project root path.
-        full: If ``True``, also scrape VLR.gg live data.
-
-    Returns:
-        Dictionary of cleaned, ready-to-load DataFrames.
-    """
+    single_folder: str | None = None,
+    skip_db: bool = False,
+    limit: int | None = None,
+) -> None:
+    """Run the streaming ETL pipeline."""
     if data_root is None:
         data_root = Path(__file__).resolve().parent.parent
     data_root = Path(data_root)
@@ -451,72 +488,93 @@ def run_etl(
     indian_path = data_root / "data" / "indian_players.json"
 
     logger.info("=" * 60)
-    logger.info("MetaMind ETL pipeline starting (full=%s)", full)
+    logger.info("MetaMind ETL pipeline starting (full=%s, folder=%s, limit=%s)", full, single_folder, limit)
     logger.info("=" * 60)
 
-    # --- Stage 1: Load raw data ---
-    logger.info("[Stage 1] Loading raw data from Kaggle CSVs …")
-    raw_data = load_kaggle_all(data_root)
-    logger.info("Loaded %d raw datasets", len(raw_data))
+    from data.db_loader import load_all as db_load_all, refresh_views
+    from db.connection import get_engine
 
-    vlr_df: pd.DataFrame | None = None
-    if full:
-        logger.info("[Stage 1b] Scraping VLR.gg South Asia events …")
-        vlr_df = scrape_vlr_events(data_root)
-        logger.info("VLR.gg: %d rows scraped", len(vlr_df))
+    engine = get_engine() if not skip_db else None
+    total_datasets = 0
+    total_rows = 0
 
-    # --- Stage 2: Normalise columns ---
-    logger.info("[Stage 2] Normalising column names …")
-    cleaned: dict[str, pd.DataFrame] = {}
-    for key, df in raw_data.items():
-        # Determine family by key prefix convention
-        if any(key.startswith(f"vct_{y}") for y in range(2021, 2027)):
-            df = normalize_family_a(df)
-        else:
-            df = normalize_family_c(df)
-        cleaned[key] = df
+    if single_folder:
+        logger.info("[Stage 1] Loading specific folder: %s", single_folder)
+        raw_data = load_single_folder(single_folder, data_root)
+        if not raw_data:
+            logger.error("Folder not found or empty.")
+            return
 
-    if vlr_df is not None and not vlr_df.empty:
-        cleaned["vlr_south_asia"] = vlr_df
+        cleaned = process_folder_data(raw_data, data_root, aliases_path, indian_path)
 
-    # --- Stage 3: Clean percentages & parse economy ---
-    logger.info("[Stage 3] Cleaning percentages and parsing economy data …")
-    for key, df in cleaned.items():
-        cleaned[key] = clean_percentages(df)
-        if "economy" in key.lower() or "eco" in key.lower():
-            cleaned[key] = parse_economy_data(cleaned[key])
+        # Apply row limit if specified
+        if limit is not None:
+            for k in cleaned:
+                if len(cleaned[k]) > limit:
+                    logger.info("Limiting %s from %d to %d rows", k, len(cleaned[k]), limit)
+                    cleaned[k] = cleaned[k].head(limit)
 
-    # --- Stage 4: Normalise player names ---
-    logger.info("[Stage 4] Normalising player names …")
-    for key, df in cleaned.items():
-        if "player_name" in df.columns:
-            cleaned[key] = clean_names(df, aliases_path)
+        total_datasets += len(cleaned)
+        total_rows += sum(len(df) for df in cleaned.values())
 
-    # --- Stage 5: Validate ranges ---
-    logger.info("[Stage 5] Validating value ranges …")
-    for key, df in cleaned.items():
-        cleaned[key] = validate_ranges(df, data_root)
+        if not skip_db:
+            logger.info("Loading %s to database...", single_folder)
+            db_load_all(engine=engine, etl_data=cleaned)
+            
+        # Delete references to free memory
+        del raw_data
+        del cleaned
+    else:
+        # Full streaming load
+        for folder_name, raw_data in yield_all_folders(data_root):
+            if not raw_data:
+                continue
 
-    # --- Stage 6: Tag nationality ---
-    logger.info("[Stage 6] Tagging nationality …")
-    for key, df in cleaned.items():
-        if "player_name_normalized" in df.columns:
-            cleaned[key] = tag_nationality(df, indian_path)
+            cleaned = process_folder_data(raw_data, data_root, aliases_path, indian_path)
 
-    # --- Stage 7: Deduplicate ---
-    logger.info("[Stage 7] Deduplicating …")
-    for key, df in cleaned.items():
-        cleaned[key] = deduplicate(df)
+            # Apply row limit if specified
+            if limit is not None:
+                for k in cleaned:
+                    if len(cleaned[k]) > limit:
+                        logger.info("Limiting %s from %d to %d rows", k, len(cleaned[k]), limit)
+                        cleaned[k] = cleaned[k].head(limit)
 
-    total_rows = sum(len(df) for df in cleaned.values())
+            total_datasets += len(cleaned)
+            total_rows += sum(len(df) for df in cleaned.values())
+
+            if not skip_db:
+                logger.info("Loading %s to database...", folder_name)
+                db_load_all(engine=engine, etl_data=cleaned)
+
+            # Clear memory
+            del raw_data
+            del cleaned
+
+        if full:
+            logger.info("[Stage 1b] Scraping VLR.gg South Asia events...")
+            vlr_df = scrape_vlr_events(data_root)
+            if vlr_df is not None and not vlr_df.empty:
+                logger.info("VLR.gg: %d rows scraped", len(vlr_df))
+                raw_vlr = {"vlr_south_asia": vlr_df}
+                cleaned_vlr = process_folder_data(raw_vlr, data_root, aliases_path, indian_path)
+                total_datasets += len(cleaned_vlr)
+                total_rows += sum(len(df) for df in cleaned_vlr.values())
+                
+                if not skip_db:
+                    logger.info("Loading VLR.gg data to database...")
+                    db_load_all(engine=engine, etl_data=cleaned_vlr)
+                    
+                del raw_vlr
+                del cleaned_vlr
+
+    if not skip_db and engine is not None:
+        logger.info("Refreshing materialized views...")
+        refresh_views(engine)
+
     logger.info("=" * 60)
-    logger.info(
-        "ETL pipeline complete — %d datasets, %d total rows",
-        len(cleaned), total_rows,
-    )
+    logger.info("ETL pipeline complete — %d datasets, %d total rows", total_datasets, total_rows)
     logger.info("=" * 60)
-
-    return cleaned
+    print(f"\n[OK] ETL complete. {total_datasets} datasets, {total_rows:,} rows processed.")
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +598,7 @@ def _setup_logging() -> None:
 
 def main() -> None:
     """CLI entry point for the ETL pipeline."""
+    import argparse
     parser = argparse.ArgumentParser(
         description="MetaMind ETL pipeline",
     )
@@ -547,6 +606,12 @@ def main() -> None:
         "--full",
         action="store_true",
         help="Run full pipeline including VLR.gg scraping",
+    )
+    parser.add_argument(
+        "--folder",
+        type=str,
+        default=None,
+        help="Run ETL for a single folder name (e.g. 'vct_2021')",
     )
     parser.add_argument(
         "--data-root",
@@ -559,25 +624,24 @@ def main() -> None:
         action="store_true",
         help="Skip database loading (ETL transform only)",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limit rows per dataset for testing (e.g. --limit 500)",
+    )
     args = parser.parse_args()
 
     _setup_logging()
 
     data_root = Path(args.data_root) if args.data_root else None
-    result = run_etl(data_root, full=args.full)
-
-    print(f"\n✓ ETL complete. {len(result)} datasets processed.")
-    for key, df in sorted(result.items()):
-        print(f"  {key}: {len(df):,} rows × {len(df.columns)} cols")
-
-    # Load into database unless --skip-db
-    if not args.skip_db:
-        print("\nLoading data into database …")
-        from data.db_loader import load_all as db_load_all
-        counts = db_load_all(etl_data=result)
-        print("\n✓ Database load complete.")
-        for table, count in counts.items():
-            print(f"  {table}: {count:,} operations")
+    run_etl(
+        data_root, 
+        full=args.full, 
+        single_folder=args.folder, 
+        skip_db=args.skip_db,
+        limit=args.limit,
+    )
 
 
 if __name__ == "__main__":
