@@ -1,268 +1,149 @@
-"""
-MetaMind — Page 3: Tournament Leaderboard
-Who are the best performers globally, and where does each region stand?
-"""
-
 import streamlit as st
-import plotly.graph_objects as go
 import pandas as pd
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
+import plotly.graph_objects as go
 from db.connection import get_engine
-from db.queries import (
-    get_all_tournaments,
-    get_leaderboard,
-    get_regional_comparison,
-    get_indian_spotlight,
-)
-from analytics.insights import generate_leaderboard_insights
+from db.queries import get_leaderboard, get_regional_comparison, get_indian_spotlight
 
-st.set_page_config(page_title="Tournament Leaderboard — MetaMind", layout="wide", page_icon="🏆")
+st.set_page_config(page_title="Global Leaderboard", layout="wide", initial_sidebar_state="collapsed")
 
-# ── Dark Plotly template ────────────────────────────────────────────
-PLOTLY_TEMPLATE = go.layout.Template(
-    layout=go.Layout(
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
-        font=dict(color="#c9d1d9", family="Inter, sans-serif"),
-        xaxis=dict(gridcolor="#21262d", zerolinecolor="#21262d"),
-        yaxis=dict(gridcolor="#21262d", zerolinecolor="#21262d"),
-    )
-)
-
-
-def render_insight_card(insight: dict):
-    """Render an analyst commentary card."""
-    st.markdown(
-        f"""
-        <div class="insight-card">
-            <div class="insight-title">{insight.get('icon', '💡')} {insight.get('title', '')}</div>
-            <div class="insight-body">{insight.get('body', '')}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# ── Load data ───────────────────────────────────────────────────────
 try:
-    engine = get_engine()
-except Exception as e:
-    st.error(f"Database connection failed: {e}")
-    st.stop()
+    with open("app.py", "r", encoding="utf-8") as f:
+        content = f.read()
+        css_start = content.find('GLOBAL_CSS = """') + 16
+        css_end = content.find('"""', css_start)
+        st.markdown(content[css_start:css_end], unsafe_allow_html=True)
+except Exception:
+    pass
 
+PLOTLY_DARK = dict(
+    paper_bgcolor='#0A0A0F',
+    plot_bgcolor='#0A0A0F',
+    font=dict(color='#8888AA', family='Inter'),
+    xaxis=dict(gridcolor='#2A2A45', linecolor='#2A2A45', tickcolor='#8888AA'),
+    yaxis=dict(gridcolor='#2A2A45', linecolor='#2A2A45', tickcolor='#8888AA'),
+    hoverlabel=dict(bgcolor='#111118', bordercolor='#7F77DD', font=dict(color='#EEEEF5'))
+)
 
-@st.cache_data(ttl=3600)
-def load_tournaments():
-    return get_all_tournaments(engine)
+def render_nav(active='Leaderboard'):
+    pages = [('home','⚡ Home'), ('Player','Player'), ('Team_Map','Team Map'), ('Leaderboard','Leaderboard')]
+    links = "".join([f'<span class="topnav-link {"active" if p==active else ""}" onclick="window.parent.location.href=\'/{p}\'">{label}</span>' for p,label in pages])
+    st.markdown(f'<div class="topnav"><div class="topnav-logo"><span>META</span>MIND</div><div class="topnav-links">{links}</div></div>', unsafe_allow_html=True)
 
+render_nav('Leaderboard')
 
-tournaments_df = load_tournaments()
+engine = get_engine()
 
-# ── Sidebar filters ─────────────────────────────────────────────────
-st.sidebar.markdown("## 🏆 Tournament Leaderboard")
+st.markdown('<div class="section-header">Global Filters</div>', unsafe_allow_html=True)
+cols = st.columns(3)
+with cols[0]:
+    region_options = ["All", "Americas", "EMEA", "Pacific", "Korea", "South Asia"]
+    selected_region = st.selectbox("Region", region_options)
+with cols[1]:
+    min_matches = st.slider("Minimum Matches", 5, 30, 10)
+with cols[2]:
+    sort_options = {"ACS": "avg_acs", "K/D": "avg_kd", "Consistency Score": "consistency", "KAST": "kast_pct", "First Kill %": "first_kill_pct"}
+    sort_label = st.selectbox("Sort by", list(sort_options.keys()))
+    sort_column = sort_options[sort_label]
 
-tournament_options = ["All"] + sorted(tournaments_df["name"].unique().tolist()) if not tournaments_df.empty else ["All"]
-selected_tournament = st.sidebar.selectbox("Tournament", tournament_options)
-tournament_id = None
-if selected_tournament != "All" and not tournaments_df.empty:
-    t_row = tournaments_df[tournaments_df["name"] == selected_tournament].iloc[0]
-    tournament_id = int(t_row["tournament_id"])
-
-region_options = ["All", "Americas", "EMEA", "Pacific", "Korea", "South Asia"]
-selected_region = st.sidebar.selectbox("Region", region_options)
-region = selected_region if selected_region != "All" else None
-
-min_matches = st.sidebar.slider("Minimum Matches", 5, 30, 10)
-
-sort_options = {
-    "ACS": "avg_acs",
-    "K/D": "avg_kd",
-    "Consistency Score": "consistency_score",
-    "KAST": "avg_kast",
-    "First Kill %": "avg_fb",
-}
-sort_label = st.sidebar.selectbox("Sort by", list(sort_options.keys()))
-sort_column = sort_options[sort_label]
-
-# ════════════════════════════════════════════════════════════════════
-# Section A — Region Comparison
-# ════════════════════════════════════════════════════════════════════
-st.markdown("## Regional Performance Comparison")
-
+st.markdown('<div class="section-header">Regional Performance Comparison</div>', unsafe_allow_html=True)
 regional = get_regional_comparison(engine)
 
 if not regional.empty:
-    fig_region = go.Figure()
-
-    fig_region.add_trace(go.Bar(
-        name="Avg ACS",
-        x=regional["region"],
-        y=regional["avg_acs"],
-        marker_color="#58a6ff",
+    fig = go.Figure()
+    
+    colors = {
+        "Americas": "#E84057", "EMEA": "#7F77DD", "Pacific": "#1D9E75",
+        "Korea": "#EF9F27", "South Asia": "#FF6B6B"
+    }
+    
+    # We will use map to get colors, default to gray if missing
+    marker_colors = [colors.get(r, "#8888AA") for r in regional['region']]
+    
+    fig.add_trace(go.Bar(
+        name="Avg ACS", x=regional['region'], y=regional['avg_acs'],
+        marker_color=marker_colors
     ))
-
-    fig_region.add_trace(go.Bar(
-        name="Avg K/D (×100)",
-        x=regional["region"],
-        y=regional["avg_kd"] * 100,
-        marker_color="#f0883e",
+    # Normalized KD
+    fig.add_trace(go.Bar(
+        name="Avg K/D (x100)", x=regional['region'], y=regional['avg_kd'] * 100,
+        marker_color=[c for c in marker_colors],
+        opacity=0.7
     ))
+    
+    fig.update_layout(barmode='group', height=400, margin=dict(l=40, r=20, t=20, b=40), legend=dict(orientation="h", y=1.1), **PLOTLY_DARK)
+    st.plotly_chart(fig, use_container_width=True)
 
-    fig_region.add_trace(go.Bar(
-        name="Avg Consistency",
-        x=regional["region"],
-        y=regional["avg_consistency"],
-        marker_color="#3fb950",
-    ))
-
-    fig_region.update_layout(
-        template=PLOTLY_TEMPLATE,
-        barmode="group",
-        height=400,
-        margin=dict(l=40, r=20, t=30, b=40),
-        legend=dict(orientation="h", y=1.1),
-        yaxis_title="Value",
-    )
-
-    st.plotly_chart(fig_region, use_container_width=True)
-
-# ════════════════════════════════════════════════════════════════════
-# Section B — Indian Player Spotlight
-# ════════════════════════════════════════════════════════════════════
 indian = get_indian_spotlight(engine)
-
 if not indian.empty:
-    st.markdown("### 🇮🇳 India's Top Performers — Global Percentile Ranking")
+    st.markdown('<div class="section-header">🇮🇳 India Spotlight</div>', unsafe_allow_html=True)
+    ind_html = "<div style='display:flex; gap:16px;'>"
+    for _, r in indian.iterrows():
+        ind_html += f"""
+        <div class="kpi-card" style="flex:1;">
+            <div style="font-family:'Rajdhani',sans-serif; font-size:24px; color:#EEEEF5; margin-bottom:8px;">{r['name']}</div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span class="kpi-label">ACS</span><span style="color:#EEEEF5; font-weight:600;">{r['avg_acs']:.1f}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span class="kpi-label">K/D</span><span style="color:#EEEEF5; font-weight:600;">{r['avg_kd']:.2f}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span class="kpi-label">Global Pct</span><span style="color:#7F77DD; font-weight:600;">{r['global_percentile']:.0f}th</span>
+            </div>
+        </div>
+        """
+    ind_html += "</div>"
+    st.markdown(ind_html, unsafe_allow_html=True)
 
-    top_3 = indian.head(3)
+st.markdown('<div class="section-header">Global Leaderboard</div>', unsafe_allow_html=True)
 
-    cols = st.columns(len(top_3))
-    for i, (_, row) in enumerate(top_3.iterrows()):
-        with cols[i]:
-            acs_pct = float(row.get("acs_percentile", 0)) * 100
-            st.markdown(
-                f"""
-                <div class="kpi-card" style="text-align:center;">
-                    <div class="kpi-label" style="font-size:1.1em; font-weight:700;">
-                        🇮🇳 {row.get('name', 'Unknown')}
-                    </div>
-                    <div style="color:#8b949e; font-size:0.85em;">{row.get('team', '') or 'Free Agent'}</div>
-                    <div class="kpi-value" style="margin-top:8px;">ACS {row.get('avg_acs', 0):.1f}</div>
-                    <div style="color:#3fb950; font-size:0.9em;">
-                        {acs_pct:.0f}th percentile globally
-                    </div>
-                    <div style="color:#8b949e; font-size:0.82em; margin-top:4px;">
-                        Consistency: {row.get('consistency_score', 0):.1f}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+lb_df = get_leaderboard(engine, min_matches=min_matches)
 
-# ════════════════════════════════════════════════════════════════════
-# Section C — Global Leaderboard Table
-# ════════════════════════════════════════════════════════════════════
-st.markdown("### Global Leaderboard")
-
-# Pagination
-page_size = 25
-total_df = get_leaderboard(engine, sort_by=sort_column, region=region, min_matches=min_matches, limit=500)
-
-if not total_df.empty:
-    total_pages = max(1, (len(total_df) + page_size - 1) // page_size)
+if not lb_df.empty:
+    if selected_region != "All":
+        lb_df = lb_df[lb_df['region'] == selected_region]
+        
+    lb_df = lb_df.sort_values(by=sort_column, ascending=False).reset_index(drop=True)
+    lb_df['rank'] = lb_df.index + 1
+    
+    page_size = 25
+    total_pages = max(1, (len(lb_df) + page_size - 1) // page_size)
     page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, step=1)
     start_idx = (page - 1) * page_size
-    page_df = total_df.iloc[start_idx:start_idx + page_size].copy()
-
-    # Add rank column
-    page_df.insert(0, "Rank", range(start_idx + 1, start_idx + 1 + len(page_df)))
-
-    # Add nationality flag
-    if "nationality" in page_df.columns:
-        page_df["nationality"] = page_df["nationality"].apply(
-            lambda n: f"🇮🇳" if n == "Indian" else (f"🌍" if n else "🌍")
-        )
-
-    # Prepare display columns
-    display_cols = [c for c in [
-        "Rank", "name", "nationality", "team", "region",
-        "avg_acs", "avg_kd", "consistency_score", "avg_kast",
-        "avg_fb", "matches_played"
-    ] if c in page_df.columns]
-
-    display_df = page_df[display_cols].copy()
-
-    col_rename = {
-        "name": "Player",
-        "nationality": "🏳️",
-        "team": "Team",
-        "region": "Region",
-        "avg_acs": "Avg ACS",
-        "avg_kd": "K/D",
-        "consistency_score": "Consistency",
-        "avg_kast": "KAST %",
-        "avg_fb": "First Kill %",
-        "matches_played": "Matches",
-    }
-    display_df = display_df.rename(columns=col_rename)
-
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Avg ACS": st.column_config.NumberColumn(format="%.1f"),
-            "K/D": st.column_config.NumberColumn(format="%.2f"),
-            "Consistency": st.column_config.NumberColumn(format="%.1f"),
-            "KAST %": st.column_config.NumberColumn(format="%.1f"),
-            "First Kill %": st.column_config.NumberColumn(format="%.2f"),
-        },
-    )
-
-    st.caption(f"Showing {start_idx + 1}–{min(start_idx + page_size, len(total_df))} of {len(total_df)} players (min {min_matches} matches)")
-
+    page_df = lb_df.iloc[start_idx:start_idx + page_size]
+    
+    lb_html = f"""
+    <div style="border:1px solid #2A2A45; border-radius:8px; overflow:hidden; margin-bottom:20px;">
+        <div class="lb-row" style="background:#111118; border-bottom:2px solid #2A2A45; color:#8888AA; font-weight:600;">
+            <div style="text-align:center;">Rank</div>
+            <div>Player</div>
+            <div>Region</div>
+            <div style="text-align:right;">ACS</div>
+            <div style="text-align:right;">K/D</div>
+            <div style="text-align:right;">Cons.</div>
+            <div style="text-align:right;">Matches</div>
+        </div>
+    """
+    
+    for _, row in page_df.iterrows():
+        rank = int(row['rank'])
+        bg = "rgba(255,215,0,0.05)" if rank <= 10 else "rgba(127,119,221,0.05)" if rank <= 50 else "transparent"
+        r_disp = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"#{rank}"
+        r_cls = "gold" if rank == 1 else "silver" if rank == 2 else "bronze" if rank == 3 else ""
+        
+        lb_html += f"""
+        <div class="lb-row" style="background:{bg};">
+            <div class="lb-rank {r_cls}">{r_disp}</div>
+            <div class="lb-name">{row['name']}</div>
+            <div class="lb-region">{row['region'] or 'Unknown'}</div>
+            <div class="lb-stat">{row['avg_acs']:.1f}</div>
+            <div class="lb-stat">{row['avg_kd']:.2f}</div>
+            <div class="lb-stat">{row['consistency']:.1f}</div>
+            <div class="lb-stat" style="color:#8888AA;">{row['matches_played']}</div>
+        </div>
+        """
+        
+    lb_html += "</div>"
+    st.markdown(lb_html, unsafe_allow_html=True)
 else:
-    st.warning("No data available for the selected filters.")
-
-# ════════════════════════════════════════════════════════════════════
-# Section D — Analyst Commentary
-# ════════════════════════════════════════════════════════════════════
-st.markdown("### 🎙️ Analyst Commentary")
-
-leaderboard_data = {}
-if not total_df.empty:
-    top_player = total_df.iloc[0]
-    leaderboard_data["top_player_name"] = top_player.get("name", "Unknown")
-    leaderboard_data["top_player_acs"] = float(top_player.get("avg_acs", 0))
-    leaderboard_data["top_player_matches"] = int(top_player.get("matches_played", 0))
-
-if not regional.empty:
-    most_consistent = regional.loc[regional["avg_consistency"].idxmax()]
-    global_avg = regional["avg_consistency"].mean()
-    leaderboard_data["most_consistent_region"] = most_consistent["region"]
-    leaderboard_data["most_consistent_score"] = float(most_consistent["avg_consistency"])
-    leaderboard_data["global_avg_consistency"] = float(global_avg)
-
-if not indian.empty:
-    top_indian = indian.iloc[0]
-    leaderboard_data["top_indian_name"] = top_indian.get("name", "Unknown")
-    leaderboard_data["top_indian_acs"] = float(top_indian.get("avg_acs", 0))
-    leaderboard_data["top_indian_percentile"] = float(top_indian.get("acs_percentile", 0)) * 100
-
-    # Find global rank
-    if not total_df.empty:
-        global_sorted = total_df.sort_values("avg_acs", ascending=False).reset_index(drop=True)
-        indian_idx = global_sorted[global_sorted["name"] == top_indian["name"]].index
-        if len(indian_idx) > 0:
-            leaderboard_data["top_indian_rank"] = int(indian_idx[0]) + 1
-
-insights = generate_leaderboard_insights(leaderboard_data)
-if insights:
-    for insight in insights:
-        render_insight_card(insight)
-else:
-    st.info("Not enough data to generate leaderboard insights.")
+    st.warning("No players found matching criteria.")

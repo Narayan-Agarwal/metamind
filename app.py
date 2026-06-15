@@ -1,279 +1,389 @@
-"""
-MetaMind — Esports Analytics Platform
-Entry point: dark theme injection, sidebar navigation, scheduler start.
-"""
-
 import streamlit as st
-import sys
-import os
-
-# Ensure project root is importable
-sys.path.insert(0, os.path.dirname(__file__))
+import pandas as pd
+from sqlalchemy import text
+from db.connection import get_engine
 
 st.set_page_config(
-    page_title="MetaMind — Esports Analytics",
-    page_icon="🧠",
+    page_title="MetaMind",
+    page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed"
 )
 
-# ── Dark theme CSS injection ────────────────────────────────────────
-st.markdown(
-    """
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+GLOBAL_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600&display=swap');
 
-        /* Global dark styling */
-        html, body, [class*="st-"] {
-            font-family: 'Inter', sans-serif;
-        }
+[data-testid="stSidebar"] {display:none !important;}
+[data-testid="collapsedControl"] {display:none !important;}
+#MainMenu, footer, header {visibility:hidden;}
+.stApp {background:#0A0A0F !important;}
 
-        /* Sidebar styling */
-        [data-testid="stSidebar"] {
-            background-color: #161b22;
-        }
-        [data-testid="stSidebar"] .stMarkdown h2 {
-            color: #58a6ff;
-            font-size: 1.2em;
-        }
+/* Top nav bar */
+.topnav {
+  display:flex; align-items:center;
+  justify-content:space-between;
+  background:#111118;
+  border-bottom:1px solid #2A2A45;
+  padding:0 32px; height:56px;
+  position:sticky; top:0; z-index:999;
+}
+.topnav-logo {
+  font-family:'Rajdhani',sans-serif;
+  font-size:22px; font-weight:700;
+  color:#EEEEF5; letter-spacing:1px;
+}
+.topnav-logo span {color:#7F77DD;}
+.topnav-links {display:flex; gap:32px;}
+.topnav-link {
+  font-family:'Inter',sans-serif;
+  font-size:13px; color:#8888AA;
+  text-decoration:none; cursor:pointer;
+  padding-bottom:4px;
+  border-bottom:2px solid transparent;
+  transition:all 0.2s;
+}
+.topnav-link:hover {color:#EEEEF5;}
+.topnav-link.active {
+  color:#7F77DD;
+  border-bottom:2px solid #7F77DD;
+}
 
-        /* KPI card styling */
-        .kpi-card {
-            background: linear-gradient(135deg, #161b22 0%, #1c2333 100%);
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-            transition: transform 0.2s ease, border-color 0.2s ease;
-        }
-        .kpi-card:hover {
-            transform: translateY(-2px);
-            border-color: #58a6ff;
-        }
-        .kpi-label {
-            color: #8b949e;
-            font-size: 0.82em;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 6px;
-        }
-        .kpi-value {
-            color: #f0f6fc;
-            font-size: 1.8em;
-            font-weight: 700;
-            line-height: 1.2;
-        }
+/* KPI cards */
+.kpi-card {
+  background:#111118;
+  border:1px solid #2A2A45;
+  border-radius:8px;
+  padding:20px 24px;
+  border-left:3px solid #7F77DD;
+}
+.kpi-label {
+  font-family:'Inter',sans-serif;
+  font-size:11px; color:#8888AA;
+  letter-spacing:1.5px;
+  text-transform:uppercase; margin-bottom:8px;
+}
+.kpi-value {
+  font-family:'Rajdhani',sans-serif;
+  font-size:32px; font-weight:700;
+  color:#EEEEF5; line-height:1;
+}
+.kpi-delta {font-size:12px; margin-top:4px;}
+.kpi-delta.pos {color:#1D9E75;}
+.kpi-delta.neg {color:#E84057;}
 
-        /* Badge styles */
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.82em;
-            font-weight: 600;
-            margin: 4px 2px;
-        }
-        .badge-peaking {
-            background: rgba(63, 185, 80, 0.15);
-            color: #3fb950;
-            border: 1px solid rgba(63, 185, 80, 0.3);
-        }
-        .badge-declining {
-            background: rgba(248, 81, 73, 0.15);
-            color: #f85149;
-            border: 1px solid rgba(248, 81, 73, 0.3);
-        }
-        .badge-consistent {
-            background: rgba(88, 166, 255, 0.15);
-            color: #58a6ff;
-            border: 1px solid rgba(88, 166, 255, 0.3);
-        }
-        .badge-region {
-            background: rgba(210, 153, 34, 0.15);
-            color: #d29922;
-            border: 1px solid rgba(210, 153, 34, 0.3);
-        }
+/* Hero card */
+.hero-card {
+  background:linear-gradient(135deg,#111118,#1A1A2E);
+  border:1px solid #2A2A45;
+  border-radius:12px; padding:32px;
+  margin-bottom:24px;
+}
+.hero-name {
+  font-family:'Rajdhani',sans-serif;
+  font-size:48px; font-weight:700;
+  color:#EEEEF5; line-height:1;
+  margin-bottom:8px;
+}
+.hero-summary {
+  font-family:'Inter',sans-serif;
+  font-size:15px; color:#AAAACC;
+  line-height:1.6;
+}
 
-        /* Agent pills */
-        .agent-pill {
-            display: inline-block;
-            padding: 2px 10px;
-            border-radius: 12px;
-            font-size: 0.75em;
-            font-weight: 500;
-            background: rgba(88, 166, 255, 0.1);
-            color: #58a6ff;
-            border: 1px solid rgba(88, 166, 255, 0.2);
-            margin: 2px;
-        }
+/* Form status badges */
+.badge {
+  display:inline-block;
+  padding:4px 14px; border-radius:20px;
+  font-family:'Inter',sans-serif;
+  font-size:12px; font-weight:600;
+  letter-spacing:0.5px;
+}
+.badge-peaking {
+  background:rgba(29,158,117,0.15);
+  color:#1D9E75;
+  border:1px solid rgba(29,158,117,0.3);
+}
+.badge-declining {
+  background:rgba(232,64,87,0.15);
+  color:#E84057;
+  border:1px solid rgba(232,64,87,0.3);
+}
+.badge-consistent {
+  background:rgba(127,119,221,0.15);
+  color:#7F77DD;
+  border:1px solid rgba(127,119,221,0.3);
+}
 
-        /* Percentile bar */
-        .pct-bar-container {
-            background: #21262d;
-            border-radius: 8px;
-            height: 8px;
-            overflow: hidden;
-        }
-        .pct-bar-fill {
-            height: 100%;
-            border-radius: 8px;
-            transition: width 0.6s ease;
-        }
+/* Insight cards */
+.insight-card {
+  background:rgba(127,119,221,0.06);
+  border-left:3px solid #7F77DD;
+  border-radius:6px; padding:14px 18px;
+  margin-bottom:10px;
+  font-family:'Inter',sans-serif;
+  font-size:13px; color:#AAAACC;
+  line-height:1.6;
+}
+.insight-card strong {color:#EEEEF5;}
 
-        /* Insight card */
-        .insight-card {
-            background: linear-gradient(135deg, #161b22 0%, #1a2233 100%);
-            border: 1px solid #30363d;
-            border-left: 4px solid #58a6ff;
-            border-radius: 8px;
-            padding: 16px 20px;
-            margin: 8px 0;
-            transition: border-color 0.2s ease;
-        }
-        .insight-card:hover {
-            border-left-color: #f0883e;
-        }
-        .insight-title {
-            color: #f0f6fc;
-            font-size: 0.95em;
-            font-weight: 600;
-            margin-bottom: 6px;
-        }
-        .insight-body {
-            color: #8b949e;
-            font-size: 0.85em;
-            line-height: 1.5;
-        }
+/* Section headers */
+.section-header {
+  font-family:'Rajdhani',sans-serif;
+  font-size:20px; font-weight:700;
+  color:#EEEEF5; margin:28px 0 16px;
+  padding-bottom:8px;
+  border-bottom:1px solid #2A2A45;
+}
 
-        /* Data table tweaks */
-        [data-testid="stDataFrame"] {
-            border-radius: 8px;
-            overflow: hidden;
-        }
+/* Stat bars */
+.stat-bar-wrap {margin-bottom:12px;}
+.stat-bar-label {
+  display:flex; justify-content:space-between;
+  font-family:'Inter',sans-serif;
+  font-size:12px; color:#8888AA;
+  margin-bottom:4px;
+}
+.stat-bar-track {
+  background:#1A1A2E; border-radius:3px;
+  height:8px; overflow:hidden;
+}
+.stat-bar-fill {
+  height:100%; border-radius:3px;
+  background:linear-gradient(90deg,#7F77DD,#9B94E8);
+  transition:width 0.6s ease;
+}
 
-        /* Hide default Streamlit branding */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
+/* Map win rate bars */
+.map-bar-wrap {margin-bottom:10px;}
+.map-bar-header {
+  display:flex; justify-content:space-between;
+  font-family:'Inter',sans-serif;
+  font-size:13px; margin-bottom:4px;
+}
+.map-name {color:#EEEEF5; font-weight:500;}
+.map-pct {color:#8888AA;}
+.map-bar-track {
+  background:#1A1A2E; border-radius:4px;
+  height:10px; overflow:hidden;
+}
 
-        /* Smooth transitions */
-        * { transition: background-color 0.2s ease; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+/* Leaderboard table styling */
+.lb-row {
+  display:grid;
+  grid-template-columns:48px 1fr 100px 80px 80px 80px;
+  gap:8px; padding:10px 16px;
+  border-bottom:1px solid #1A1A2E;
+  align-items:center;
+  font-family:'Inter',sans-serif;
+  font-size:13px;
+}
+.lb-row:hover {background:rgba(127,119,221,0.05);}
+.lb-rank {
+  font-family:'Rajdhani',sans-serif;
+  font-size:18px; font-weight:700;
+  color:#8888AA; text-align:center;
+}
+.lb-rank.gold {color:#FFD700;}
+.lb-rank.silver {color:#C0C0C0;}
+.lb-rank.bronze {color:#CD7F32;}
+.lb-name {color:#EEEEF5; font-weight:500;}
+.lb-region {color:#8888AA; font-size:11px;}
+.lb-stat {
+  color:#EEEEF5; text-align:right;
+  font-family:'Rajdhani',sans-serif;
+  font-size:16px;
+}
 
-# ── Sidebar navigation ─────────────────────────────────────────────
-st.sidebar.markdown("# 🧠 MetaMind")
-st.sidebar.markdown("*Esports Analytics Platform*")
-st.sidebar.markdown("---")
+/* Hero section */
+@keyframes bgPulse {
+  0%,100% {background-position:0% 50%;}
+  50% {background-position:100% 50%;}
+}
+.hero-section {
+  background:linear-gradient(-45deg, #0A0A0F,#1A1A2E,#0F0F1E,#111118);
+  background-size:400% 400%;
+  animation:bgPulse 8s ease infinite;
+  padding:60px 32px; text-align:center;
+  border-radius:12px; margin-bottom:32px;
+}
+.hero-title {
+  font-family:'Rajdhani',sans-serif;
+  font-size:72px; font-weight:700;
+  color:#7F77DD; line-height:1;
+  text-shadow:0 0 40px rgba(127,119,221,0.4);
+}
+.hero-subtitle {
+  font-family:'Inter',sans-serif;
+  font-size:18px; color:#8888AA;
+  margin-top:8px;
+}
 
-# Refresh button
-if st.sidebar.button("🔄 Refresh Data Cache"):
-    st.cache_data.clear()
-    st.toast("Cache cleared! Data will reload on next query.", icon="✅")
+/* Stat cards on home */
+.stat-card {
+  background:#111118;
+  border:1px solid #2A2A45;
+  border-top:3px solid #7F77DD;
+  border-radius:8px; padding:24px;
+  text-align:center;
+}
+.stat-card-num {
+  font-family:'Rajdhani',sans-serif;
+  font-size:44px; font-weight:700;
+  color:#EEEEF5;
+}
+.stat-card-label {
+  font-family:'Inter',sans-serif;
+  font-size:11px; color:#8888AA;
+  letter-spacing:2px;
+  text-transform:uppercase;
+  margin-top:4px;
+}
 
-st.sidebar.markdown("---")
-st.sidebar.markdown(
-    """
-    <div style="color:#8b949e; font-size:0.78em; line-height:1.6;">
-        <strong>Pages</strong><br>
-        📊 Player Intelligence<br>
-        🗺️ Team Map Strategy<br>
-        🏆 Tournament Leaderboard<br>
-        <br>
-        <strong>Data</strong><br>
-        VCT 2021–2026 · CT2024<br>
-        VLR.gg South Asia events<br>
-        <br>
-        Built by Narayan Agarwal
+/* Feature cards */
+.feature-card {
+  background:#111118;
+  border:1px solid #2A2A45;
+  border-radius:10px; padding:28px;
+  transition:border-color 0.2s, box-shadow 0.2s;
+  cursor:pointer;
+  height:100%;
+}
+.feature-card:hover {
+  border-color:#7F77DD;
+  box-shadow:0 0 24px rgba(127,119,221,0.15);
+}
+.feature-title {
+  font-family:'Rajdhani',sans-serif;
+  font-size:20px; font-weight:700;
+  color:#EEEEF5; margin-bottom:10px;
+}
+.feature-desc {
+  font-family:'Inter',sans-serif;
+  font-size:13px; color:#8888AA;
+  line-height:1.6;
+}
+
+/* Streamlit widget overrides */
+.stSelectbox > div > div {
+  background:#111118 !important;
+  border:1px solid #2A2A45 !important;
+  color:#EEEEF5 !important;
+}
+.stSlider > div {accent-color:#7F77DD;}
+[data-testid="stMetricValue"] {
+  color:#EEEEF5 !important;
+  font-family:'Rajdhani',sans-serif !important;
+  font-size:28px !important;
+}
+</style>
+"""
+
+st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+
+if 'page' not in st.session_state:
+    st.session_state.page = 'home'
+
+def render_nav(active='home'):
+    pages = [
+        ('home','⚡ Home'),
+        ('Player','Player'),
+        ('Team_Map','Team Map'),
+        ('Leaderboard','Leaderboard')
+    ]
+    links = ""
+    for p,label in pages:
+        cls = "topnav-link active" if p==active else "topnav-link"
+        links += f'''
+        <span class="{cls}" 
+          onclick="window.parent.location.href='/{p}'"
+        >{label}</span>'''
+    st.markdown(f"""
+    <div class="topnav">
+      <div class="topnav-logo">
+        <span>META</span>MIND
+      </div>
+      <div class="topnav-links">{links}</div>
     </div>
-    """,
-    unsafe_allow_html=True,
-)
+    """, unsafe_allow_html=True)
 
-# ── Start scheduler ────────────────────────────────────────────────
-try:
-    from data.scheduler import start_scheduler
-    start_scheduler()
-except Exception:
-    pass  # Scheduler is optional — don't block the app
+render_nav('home')
 
-# ── Main landing page ───────────────────────────────────────────────
-st.markdown(
-    """
-    <div style="text-align:center; padding:40px 0;">
-        <h1 style="font-size:3em; margin-bottom:0; color:#f0f6fc;">
-            🧠 MetaMind
-        </h1>
-        <p style="color:#8b949e; font-size:1.2em; max-width:600px; margin:12px auto 0;">
-            Esports Analytics Platform — transforming 5 years of Valorant
-            pro match data into interactive performance insights
-        </p>
+st.markdown("""
+<div class="hero-section">
+    <div class="hero-title">METAMIND</div>
+    <div class="hero-subtitle">Advanced Esports Analytics & Strategy Platform</div>
+</div>
+""", unsafe_allow_html=True)
+
+engine = get_engine()
+
+with engine.connect() as conn:
+    total_players = conn.execute(text("SELECT COUNT(*) FROM players")).scalar()
+    total_matches = conn.execute(text("SELECT COUNT(*) FROM matches")).scalar()
+    total_maps = conn.execute(text("SELECT COUNT(*) FROM maps")).scalar()
+    total_years = conn.execute(text("SELECT COUNT(DISTINCT year) FROM tournaments")).scalar()
+    
+    top_players = pd.read_sql("SELECT name, avg_acs FROM mv_player_percentiles ORDER BY avg_acs DESC LIMIT 5", conn)
+
+st.markdown(f"""
+<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:32px;">
+    <div class="stat-card">
+        <div class="stat-card-num">{total_players:,}</div>
+        <div class="stat-card-label">Total Players</div>
     </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# Feature cards
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.markdown(
-        """
-        <div class="kpi-card">
-            <div class="kpi-value" style="font-size:1.5em;">📊</div>
-            <div class="kpi-label" style="margin-top:12px; font-size:0.95em; color:#f0f6fc;">
-                Player Intelligence
-            </div>
-            <div style="color:#8b949e; font-size:0.82em; margin-top:8px;">
-                Form curves, percentile rankings, consistency scores,
-                and head-to-head comparisons
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with col2:
-    st.markdown(
-        """
-        <div class="kpi-card">
-            <div class="kpi-value" style="font-size:1.5em;">🗺️</div>
-            <div class="kpi-label" style="margin-top:12px; font-size:0.95em; color:#f0f6fc;">
-                Team Map Strategy
-            </div>
-            <div style="color:#8b949e; font-size:0.82em; margin-top:8px;">
-                Map DNA radar, attack vs defense splits,
-                economy analysis, and strategic identity
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with col3:
-    st.markdown(
-        """
-        <div class="kpi-card">
-            <div class="kpi-value" style="font-size:1.5em;">🏆</div>
-            <div class="kpi-label" style="margin-top:12px; font-size:0.95em; color:#f0f6fc;">
-                Tournament Leaderboard
-            </div>
-            <div style="color:#8b949e; font-size:0.82em; margin-top:8px;">
-                Regional comparisons, Indian spotlight,
-                global rankings with analyst commentary
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-st.markdown(
-    """
-    <div style="text-align:center; margin-top:40px; color:#8b949e; font-size:0.85em;">
-        Select a page from the sidebar to start exploring →
+    <div class="stat-card">
+        <div class="stat-card-num">{total_matches:,}</div>
+        <div class="stat-card-label">Matches Analyzed</div>
     </div>
-    """,
-    unsafe_allow_html=True,
-)
+    <div class="stat-card">
+        <div class="stat-card-num">{total_maps:,}</div>
+        <div class="stat-card-label">Maps Covered</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-num">{total_years}</div>
+        <div class="stat-card-label">Years of Data</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+cols = st.columns(3)
+with cols[0]:
+    st.markdown("""
+    <div class="feature-card" onclick="window.parent.location.href='/Player'">
+        <div class="feature-title">🎯 Player Intelligence</div>
+        <div class="feature-desc">Deep-dive into individual player performance, agent pools, and historical form tracking with interactive visualizations.</div>
+    </div>
+    """, unsafe_allow_html=True)
+with cols[1]:
+    st.markdown("""
+    <div class="feature-card" onclick="window.parent.location.href='/Team_Map'">
+        <div class="feature-title">🗺️ Team & Map Strategy</div>
+        <div class="feature-desc">Analyze team map pools, economy round win rates, and attack vs defense side biases to find strategic edges.</div>
+    </div>
+    """, unsafe_allow_html=True)
+with cols[2]:
+    st.markdown("""
+    <div class="feature-card" onclick="window.parent.location.href='/Leaderboard'">
+        <div class="feature-title">🏆 Global Leaderboard</div>
+        <div class="feature-desc">Compare the world's best players across regions, sort by key metrics, and discover rising stars.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown('<div class="section-header">Top 5 Players Globally (by ACS)</div>', unsafe_allow_html=True)
+
+lb_html = ""
+for i, row in top_players.iterrows():
+    rank = i + 1
+    rank_cls = "gold" if rank == 1 else "silver" if rank == 2 else "bronze" if rank == 3 else ""
+    lb_html += f"""
+    <div class="lb-row">
+        <div class="lb-rank {rank_cls}">#{rank}</div>
+        <div class="lb-name">{row['name']}</div>
+        <div></div>
+        <div></div>
+        <div></div>
+        <div class="lb-stat">{row['avg_acs']:.1f} ACS</div>
+    </div>
+    """
+st.markdown(f"<div>{lb_html}</div>", unsafe_allow_html=True)
