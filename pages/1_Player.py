@@ -141,11 +141,11 @@ def load_averages():
 
 
 players_df = load_players()
-tournaments_df = load_tournaments()
-
-if players_df.empty:
-    st.warning("No player data found. Run the ETL pipeline first.")
+if players_df is None or players_df.empty:
+    st.error(f"Query returned no data. Check Debug page.")
     st.stop()
+
+tournaments_df = load_tournaments()
 
 # ── Sidebar filters ─────────────────────────────────────────────────
 st.sidebar.markdown("## 📊 Player Intelligence")
