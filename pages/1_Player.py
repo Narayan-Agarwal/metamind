@@ -29,7 +29,7 @@ PLOTLY_DARK = dict(
 
 def render_nav(active='Player'):
     pages = [('home','⚡ Home'), ('Player','Player'), ('Team_Map','Team Map'), ('Leaderboard','Leaderboard')]
-    links = "".join([f'<span class="topnav-link {"active" if p==active else ""}" onclick="window.parent.location.href=\'/{p}\'">{label}</span>' for p,label in pages])
+    links = "".join([f'<a href="/{p}" class="topnav-link {"active" if p==active else ""}">{label}</a>' for p,label in pages])
     st.markdown(f'<div class="topnav"><div class="topnav-logo"><span>META</span>MIND</div><div class="topnav-links">{links}</div></div>', unsafe_allow_html=True)
 
 render_nav('Player')

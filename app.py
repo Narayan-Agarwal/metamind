@@ -295,9 +295,7 @@ def render_nav(active='home'):
     for p,label in pages:
         cls = "topnav-link active" if p==active else "topnav-link"
         links += f'''
-        <span class="{cls}" 
-          onclick="window.parent.location.href='/{p}'"
-        >{label}</span>'''
+        <a href="/{p}" class="{cls}">{label}</a>'''
     st.markdown(f"""
     <div class="topnav">
       <div class="topnav-logo">

@@ -82,6 +82,11 @@ def get_regional_comparison(engine):
     """, engine)
 
 def get_indian_spotlight(engine):
+    known_indian = ['Excali','Rawfiul','Antidote',
+      'Venka','Vibhor','mw1','Deathmaker','hellff',
+      'Rite2Ace','Amaterasu','Marzil','Techno',
+      'Lightningfast','Karam1L','Rishi','Saarang']
+
     return pd.read_sql("""
         SELECT 
           name,
@@ -93,7 +98,7 @@ def get_indian_spotlight(engine):
             AS global_percentile,
           matches_played
         FROM mv_player_percentiles
-        WHERE nationality = 'Indian'
+        WHERE name = ANY(%(names)s)
         ORDER BY avg_acs DESC
         LIMIT 5
-    """, engine)
+    """, engine, params={"names": known_indian})
