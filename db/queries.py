@@ -19,10 +19,10 @@ from sqlalchemy.engine import Engine
 
 def get_all_players(engine: Engine) -> pd.DataFrame:
     sql = text("""
-        SELECT p.player_id, p.name, t.name AS team, p.region
-        FROM players p
-        LEFT JOIN teams t ON p.team_id = t.team_id
-        ORDER BY p.name
+        SELECT player_id, name, region, nationality
+        FROM players
+        ORDER BY name
+        LIMIT 500
     """)
     return pd.read_sql(sql, engine)
 
@@ -32,6 +32,7 @@ def get_all_teams(engine: Engine) -> pd.DataFrame:
         SELECT team_id, name, region
         FROM teams
         ORDER BY name
+        LIMIT 200
     """)
     return pd.read_sql(sql, engine)
 
@@ -313,20 +314,27 @@ def get_leaderboard(
     if sort_by not in allowed_sort:
         sort_by = "avg_acs"
 
-    conditions = ["matches_played >= :min_matches"]
+    conditions = ["mv.matches_played >= :min_matches"]
     params: dict = {"min_matches": min_matches, "offset": offset, "limit": limit}
 
     if region is not None:
-        conditions.append("region = :region")
+        conditions.append("mv.region = :region")
         params["region"] = region
 
     where_clause = " AND ".join(conditions)
 
     sql = text(f"""
-        SELECT *
-        FROM mv_player_percentiles
+        SELECT 
+            mv.player_id, mv.name, mv.region, mv.nationality, 
+            mv.avg_acs, mv.acs_stddev, mv.avg_kd, mv.avg_kills, 
+            mv.avg_fb, mv.avg_hs, mv.avg_kast, mv.matches_played, 
+            mv.consistency_score, mv.acs_percentile, mv.kd_percentile, mv.fb_percentile,
+            t.name AS team
+        FROM mv_player_percentiles mv
+        JOIN players p ON mv.player_id = p.player_id
+        LEFT JOIN teams t ON p.team_id = t.team_id
         WHERE {where_clause}
-        ORDER BY {sort_by} DESC
+        ORDER BY mv.{sort_by} DESC
         LIMIT :limit OFFSET :offset
     """)
 
