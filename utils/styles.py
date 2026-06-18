@@ -446,34 +446,47 @@ PLOTLY_THEME = dict(
 )
 
 def render_nav(active_page=''):
-    pages = [
-        ('/Player', '👤', 'Player'),
-        ('/Team_Map', '🗺', 'Team Map'),
-        ('/Leaderboard', '🏆', 'Leaderboard'),
-    ]
-    rail_icons = ""
-    top_links = ""
-    for href, icon, label in pages:
-        is_active = active_page in href
-        rail_cls = "rail-icon active" if is_active else "rail-icon"
-        top_cls = "topnav-link active" if is_active else "topnav-link"
-        rail_icons += f'''<a href="{href}" class="{rail_cls}" title="{label}">{icon}</a>'''
-        top_links += f'''<a href="{href}" class="{top_cls}">{label}</a>'''
-    
     st.markdown(f"""
     <div class="topbar">
       <div class="topbar-logo">
         <em>META</em>MIND
       </div>
-      <div class="topbar-nav">
-        <a href="/" class="topnav-link {'active' if active_page=='' else ''}">Home</a>
-        {top_links}
-      </div>
     </div>
     <div class="icon-rail">
-      <a href="/" class="rail-icon {'active' if active_page=='' else ''}" title="Home">🏠</a>
-      {rail_icons}
+      <a href="/" title="Home" class="rail-icon">🏠</a>
+      <a href="/Player" title="Player" class="rail-icon">👤</a>
+      <a href="/Team_Map" title="Team Map" class="rail-icon">🗺️</a>
+      <a href="/Leaderboard" title="Leaderboard" class="rail-icon">🏆</a>
     </div>
+    """, unsafe_allow_html=True)
+    
+    gap,h,p,tm,lb = st.columns([4,1,1,1,1])
+    with h:
+        st.page_link("app.py", label="Home", use_container_width=True)
+    with p:
+        st.page_link("pages/1_Player.py", label="Player", use_container_width=True)
+    with tm:
+        st.page_link("pages/2_Team_Map.py", label="Team Map", use_container_width=True)
+    with lb:
+        st.page_link("pages/3_Leaderboard.py", label="Leaderboard", use_container_width=True)
+    
+    st.markdown("""
+    <style>
+    [data-testid="stPageLink"] {
+        background:transparent !important;
+        border:none !important;
+        color:#888899 !important;
+        font-family:'Inter',sans-serif !important;
+        font-size:13px !important;
+        padding:0 !important;
+    }
+    [data-testid="stPageLink"]:hover {
+        color:#EAEAEA !important;
+    }
+    [data-testid="stPageLink-container"] {
+        margin-top:-52px;
+    }
+    </style>
     """, unsafe_allow_html=True)
 
 HOME_HERO_HTML = """

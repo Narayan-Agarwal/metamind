@@ -33,12 +33,20 @@ with engine.connect() as conn:
 cols = st.columns([1, 3])
 
 with cols[0]:
-    player_options = players_df['name'].tolist()
-    selected_player = st.selectbox("Select Player", player_options)
+    if players_df.empty:
+        st.error("No players found in database")
+        st.stop()
+
+    player_map = dict(zip(players_df['name'], players_df['player_id']))
+
+    selected_name = st.selectbox(
+        "Select Player",
+        options=sorted(player_map.keys()),
+        placeholder="Search player name..."
+    )
     
-    if selected_player:
-        p_row = players_df[players_df['name'] == selected_player].iloc[0]
-        pid = int(p_row['player_id'])
+    if selected_name:
+        pid = int(player_map[selected_name])
         
         pct_df = get_player_percentiles(engine, pid)
         stats_df = get_player_stats(engine, pid)
