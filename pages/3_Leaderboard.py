@@ -48,7 +48,19 @@ if not regional.empty:
         opacity=0.7
     ))
     
-    fig.update_layout(barmode='group', height=400, legend=dict(orientation="h", y=1.1), **PLOTLY_THEME)
+    fig.update_layout(
+        **PLOTLY_THEME,
+        barmode='group',
+        height=400,
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 indian = get_indian_spotlight(engine)
