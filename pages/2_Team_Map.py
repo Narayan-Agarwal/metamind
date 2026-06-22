@@ -130,11 +130,12 @@ with cols[0]:
         ))
         fig_agent.update_layout(
             **PLOTLY_THEME,
-            title="Avg ACS by Agent",
-            title_font=dict(color='#EAEAEA', family='Rajdhani', size=16),
+            title=dict(text='Avg ACS by Agent', font=dict(color='#EAEAEA', family='Rajdhani', size=16)),
             height=350,
             showlegend=False
         )
+        fig_agent.update_xaxes(gridcolor='#2E2E3A', linecolor='#2E2E3A', tickcolor='#888899', showgrid=True)
+        fig_agent.update_yaxes(gridcolor='#2E2E3A', linecolor='#2E2E3A', tickcolor='#888899', showgrid=True)
         st.plotly_chart(fig_agent, use_container_width=True)
         
 with cols[1]:
@@ -171,6 +172,8 @@ with cols[1]:
                 showlegend=False,
                 margin=dict(l=100, r=20, t=20, b=40)
             )
+            fig_rank.update_xaxes(gridcolor='#2E2E3A', linecolor='#2E2E3A', tickcolor='#888899', showgrid=True)
+            fig_rank.update_yaxes(gridcolor='#2E2E3A', linecolor='#2E2E3A', tickcolor='#888899', showgrid=True)
             st.plotly_chart(fig_rank, use_container_width=True)
 
 # SECTION F

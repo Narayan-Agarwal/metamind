@@ -70,28 +70,12 @@ with cols[0]:
         </div>
         <div class="badge {badge_class}" style="margin-bottom:24px;">{form_status}</div>
         
-        <div style="display:grid; gap:16px;">
-            <div>
-                <div style="font-size:11px; color:#888899; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Matches Played</div>
-                <div style="font-family:'Rajdhani',sans-serif; font-size:28px; font-weight:700; color:#EAEAEA;">
-                    {pct['matches_played']}
-                </div>
-            </div>
-            <div>
-                <div style="font-size:11px; color:#888899; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Avg ACS</div>
-                <div style="font-family:'Rajdhani',sans-serif; font-size:28px; font-weight:700; color:#EAEAEA;">
-                    {pct['avg_acs']:.1f}
-                </div>
-            </div>
-            <div>
-                <div style="font-size:11px; color:#888899; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Consistency</div>
-                <div style="font-family:'Rajdhani',sans-serif; font-size:28px; font-weight:700; color:#EAEAEA;">
-                    {pct['consistency_score']:.1f}
-                </div>
-            </div>
-        </div>
     </div>
     """, unsafe_allow_html=True)
+
+    st.metric("Matches Played", int(pct['matches_played']))
+    st.metric("Avg ACS", f"{float(pct['avg_acs']):.1f}")
+    st.metric("Consistency", f"{float(pct['consistency_score']):.1f}")
 
 with cols[1]:
     acs_pct = float(pct['acs_percentile'] or 0)
@@ -172,7 +156,7 @@ with cols[1]:
             marker_color='#00D4FF', opacity=0.7, name="Kills"
         ), row=2, col=1)
         
-        fig.update_layout(**PLOTLY_THEME, height=450, showlegend=False, title_text='Performance Timeline', title_font=dict(color='#EAEAEA', family='Rajdhani', size=16))
+        fig.update_layout(**PLOTLY_THEME, height=450, showlegend=False, title=dict(text='Performance Timeline', font=dict(color='#EAEAEA', family='Rajdhani', size=16)))
         fig.update_xaxes(**AXIS_STYLE)
         fig.update_yaxes(**AXIS_STYLE)
         st.plotly_chart(fig, use_container_width=True)
