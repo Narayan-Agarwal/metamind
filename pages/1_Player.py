@@ -25,10 +25,10 @@ if players_df.empty:
     st.stop()
 
 with engine.connect() as conn:
-    ds_avg_acs = conn.execute(text("SELECT AVG(avg_acs) FROM mv_player_percentiles")).scalar() or 0
-    ds_avg_kd = conn.execute(text("SELECT AVG(avg_kd) FROM mv_player_percentiles")).scalar() or 0
-    ds_avg_kast = conn.execute(text("SELECT AVG(avg_kast) FROM mv_player_percentiles")).scalar() or 0
-    ds_avg_cons = conn.execute(text("SELECT AVG(consistency_score) FROM mv_player_percentiles")).scalar() or 0
+    ds_avg_acs = float(conn.execute(text("SELECT AVG(avg_acs) FROM mv_player_percentiles")).scalar() or 0)
+    ds_avg_kd = float(conn.execute(text("SELECT AVG(avg_kd) FROM mv_player_percentiles")).scalar() or 0)
+    ds_avg_kast = float(conn.execute(text("SELECT AVG(avg_kast) FROM mv_player_percentiles")).scalar() or 0)
+    ds_avg_cons = float(conn.execute(text("SELECT AVG(consistency_score) FROM mv_player_percentiles")).scalar() or 0)
 
 # Player selector OUTSIDE columns so variables are accessible everywhere
 player_names = sorted(players_df['name'].tolist())
@@ -108,27 +108,17 @@ with cols[1]:
     </div>
     """, unsafe_allow_html=True)
 
-    kpi_html = ""
     metrics = [
-        ("Avg ACS", avg_acs, ds_avg_acs, 1, "teal"),
-        ("K/D", float(pct['avg_kd'] or 0), ds_avg_kd, 2, "purple"),
-        ("KAST %", float(pct['avg_kast'] or 0), ds_avg_kast, 1, "teal"),
-        ("Consistency", float(pct['consistency_score'] or 0), ds_avg_cons, 1, "purple")
+        ("Avg ACS", avg_acs, ds_avg_acs, 1),
+        ("K/D", float(pct['avg_kd'] or 0), ds_avg_kd, 2),
+        ("KAST %", float(pct['avg_kast'] or 0), ds_avg_kast, 1),
+        ("Consistency", float(pct['consistency_score'] or 0), ds_avg_cons, 1),
     ]
-    
-    for label, val, ds_val, prec, color in metrics:
+    kpi_cols = st.columns(4)
+    for i, (label, val, ds_val, prec) in enumerate(metrics):
         delta = val - ds_val
-        d_str = f"+{delta:.{prec}f}" if delta > 0 else f"{delta:.{prec}f}"
-        d_cls = "up" if delta > 0 else "down"
-        kpi_html += f"""
-        <div class="stat-card {color}">
-            <div class="stat-label">{label}</div>
-            <div class="stat-value">{val:.{prec}f}</div>
-            <div class="stat-delta {d_cls}">{d_str} vs avg</div>
-        </div>
-        """
-    
-    st.markdown(f'<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px;">{kpi_html}</div>', unsafe_allow_html=True)
+        with kpi_cols[i]:
+            st.metric(label=label, value=f"{val:.{prec}f}", delta=f"{delta:+.{prec}f} vs avg")
     
     st.markdown('<div class="section-title">PERFORMANCE PERCENTILES</div>', unsafe_allow_html=True)
     pb_html = ""
