@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from db.connection import get_engine
 from db.queries import get_leaderboard, get_regional_comparison, get_indian_spotlight
-from utils.styles import GLOBAL_CSS, PLOTLY_THEME, render_nav
+from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav
 
 st.set_page_config(page_title="Global Leaderboard", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -61,6 +61,8 @@ if not regional.empty:
             x=1
         )
     )
+    fig.update_xaxes(**AXIS_STYLE)
+    fig.update_yaxes(**AXIS_STYLE)
     st.plotly_chart(fig, use_container_width=True)
 
 indian = get_indian_spotlight(engine)

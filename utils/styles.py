@@ -425,18 +425,6 @@ PLOTLY_THEME = dict(
         color='#888899', family='Inter',
         size=12
     ),
-    xaxis=dict(
-        gridcolor='#2E2E3A',
-        linecolor='#2E2E3A',
-        tickcolor='#888899',
-        showgrid=True,
-    ),
-    yaxis=dict(
-        gridcolor='#2E2E3A',
-        linecolor='#2E2E3A',
-        tickcolor='#888899',
-        showgrid=True,
-    ),
     hoverlabel=dict(
         bgcolor='#252530',
         bordercolor='#F5C518',
@@ -444,6 +432,8 @@ PLOTLY_THEME = dict(
     ),
     margin=dict(l=40,r=20,t=40,b=40),
 )
+
+AXIS_STYLE = dict(gridcolor='#2E2E3A', linecolor='#2E2E3A', tickcolor='#888899', showgrid=True)
 
 def render_nav(active_page=''):
     st.markdown(f"""

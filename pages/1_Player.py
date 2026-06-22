@@ -5,7 +5,7 @@ from plotly.subplots import make_subplots
 from sqlalchemy import text
 from db.connection import get_engine
 from db.queries import get_all_players, get_player_percentiles, get_player_stats
-from utils.styles import GLOBAL_CSS, PLOTLY_THEME, render_nav
+from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav
 
 st.set_page_config(page_title="Player Intelligence", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -183,6 +183,8 @@ with cols[1]:
         ), row=2, col=1)
         
         fig.update_layout(**PLOTLY_THEME, height=450, showlegend=False, title_text='Performance Timeline', title_font=dict(color='#EAEAEA', family='Rajdhani', size=16))
+        fig.update_xaxes(**AXIS_STYLE)
+        fig.update_yaxes(**AXIS_STYLE)
         st.plotly_chart(fig, use_container_width=True)
     
     st.markdown('<div class="section-title">ANALYST INSIGHTS</div>', unsafe_allow_html=True)

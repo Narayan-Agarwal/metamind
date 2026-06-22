@@ -4,7 +4,7 @@ from sqlalchemy import text
 def get_all_players(engine):
     return pd.read_sql("""
         SELECT player_id, name, region, nationality
-        FROM players
+        FROM mv_player_percentiles
         WHERE name IS NOT NULL
         ORDER BY name
     """, engine)
