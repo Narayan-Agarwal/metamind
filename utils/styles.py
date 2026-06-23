@@ -445,7 +445,7 @@ def render_nav(active_page=''):
     <div class="icon-rail">
       <a href="/" title="Home" class="rail-icon">🏠</a>
       <a href="/Player" title="Player" class="rail-icon">👤</a>
-      <a href="/Team_Map" title="Team Map" class="rail-icon">🗺️</a>
+      <a href="/Team_Map" title="Compare" class="rail-icon">🗺️</a>
       <a href="/Leaderboard" title="Leaderboard" class="rail-icon">🏆</a>
     </div>
     """, unsafe_allow_html=True)
@@ -456,7 +456,7 @@ def render_nav(active_page=''):
     with p:
         st.page_link("pages/1_Player.py", label="Player", use_container_width=True)
     with tm:
-        st.page_link("pages/2_Team_Map.py", label="Team Map", use_container_width=True)
+        st.page_link("pages/2_Team_Map.py", label="Compare", use_container_width=True)
     with lb:
         st.page_link("pages/3_Leaderboard.py", label="Leaderboard", use_container_width=True)
     

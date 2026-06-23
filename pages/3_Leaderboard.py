@@ -51,7 +51,7 @@ if not regional.empty:
             text=[f"{row['avg_acs']:.0f}"],
             textposition='outside',
             textfont=dict(color='#EAEAEA', size=12, family='Rajdhani'),
-            hovertemplate=f"<b>{region_name}</b><br>Avg ACS: %{{y:.1f}}<br>Avg K/D: {row['avg_kd']:.2f}<extra></extra>"
+            hovertemplate=f"<b>{region_name}</b><br>Avg ACS: %{{y:.1f}}<br>Avg K/D: {float(row['avg_kd']):.2f}<extra></extra>"
         ))
     fig.update_layout(
         **PLOTLY_THEME,

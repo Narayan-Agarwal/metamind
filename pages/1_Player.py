@@ -95,9 +95,9 @@ with cols[1]:
 
     metrics = [
         ("Avg ACS", avg_acs, ds_avg_acs, 1),
-        ("K/D", float(pct['avg_kd'] or 0), ds_avg_kd, 2),
         ("KAST %", float(pct['avg_kast'] or 0), ds_avg_kast, 1),
         ("Consistency", float(pct['consistency_score'] or 0), ds_avg_cons, 1),
+        ("Matches", float(pct['matches_played'] or 0), 0, 0),
     ]
     kpi_cols = st.columns(4)
     for i, (label, val, ds_val, prec) in enumerate(metrics):
@@ -127,105 +127,85 @@ with cols[1]:
         """
     st.markdown(pb_html, unsafe_allow_html=True)
     
-    st.markdown('<div class="section-title">PERFORMANCE TIMELINE</div>', unsafe_allow_html=True)
-    if not stats_df.empty:
-        stats_df = stats_df.sort_values('match_date').reset_index(drop=True)
-        stats_df['match_index'] = stats_df.index + 1
-        stats_df['acs_safe'] = stats_df['acs'].fillna(0)
-        stats_df['kills_safe'] = stats_df['kills'].fillna(0)
-        stats_df['deaths_safe'] = stats_df['deaths'].fillna(1).clip(lower=1)
-
-        tab1, tab2 = st.tabs(["📈 Timeline", "🕸️ Radar"])
-
-        with tab1:
-            fig = go.Figure()
-            fig.add_trace(go.Scatter3d(
-                x=stats_df['match_index'],
-                y=stats_df['acs_safe'],
-                z=stats_df['kills_safe'],
-                mode='lines+markers',
-                line=dict(color='#F5C518', width=4),
-                marker=dict(
-                    size=6,
-                    color=stats_df['acs_safe'],
-                    colorscale=[[0, '#2E2E3A'], [0.5, '#F5C518'], [1, '#FFD700']],
-                    showscale=False
-                ),
-                text=stats_df.apply(lambda r: f"Match {int(r['match_index'])}<br>ACS: {r['acs_safe']:.0f}<br>Kills: {r['kills_safe']:.0f}", axis=1),
-                hoverinfo='text',
-                name='Performance'
-            ))
-            fig.add_trace(go.Scatter3d(
-                x=[stats_df.loc[stats_df['acs_safe'].idxmax(), 'match_index']],
-                y=[stats_df['acs_safe'].max()],
-                z=[stats_df.loc[stats_df['acs_safe'].idxmax(), 'kills_safe']],
-                mode='markers',
-                marker=dict(size=12, color='#FFD700', symbol='diamond'),
-                name='Peak',
-                hoverinfo='skip'
-            ))
-            fig.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                scene=dict(
-                    bgcolor='#1C1C24',
-                    xaxis=dict(title='Match', gridcolor='#2E2E3A', color='#888899', showbackground=False),
-                    yaxis=dict(title='ACS', gridcolor='#2E2E3A', color='#888899', showbackground=False),
-                    zaxis=dict(title='Kills', gridcolor='#2E2E3A', color='#888899', showbackground=False),
-                    camera=dict(eye=dict(x=1.5, y=1.5, z=0.8))
-                ),
-                height=450,
-                showlegend=False,
-                margin=dict(l=0, r=0, t=10, b=0),
-                font=dict(color='#888899', family='Inter', size=11)
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-        with tab2:
-            radar_vals = [
-                float(pct['acs_percentile'] or 0) * 100,
-                float(pct['avg_kast'] or 0),
-                float(pct['consistency_score'] or 0),
-                min(float(pct['matches_played'] or 0) / 50 * 100, 100),
-                float(pct['avg_kd'] or 0) * 50
-            ]
-            radar_cats = ['ACS Rank', 'KAST %', 'Consistency', 'Experience', 'K/D Index']
-            radar_vals_closed = radar_vals + [radar_vals[0]]
-            radar_cats_closed = radar_cats + [radar_cats[0]]
-            fig2 = go.Figure()
-            fig2.add_trace(go.Scatterpolar(
-                r=radar_vals_closed,
-                theta=radar_cats_closed,
-                fill='toself',
-                fillcolor='rgba(245,197,24,0.15)',
-                line=dict(color='#F5C518', width=2),
-                marker=dict(size=6, color='#F5C518'),
-                name=str(pct['name'])
-            ))
-            fig2.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                polar=dict(
-                    bgcolor='#1C1C24',
-                    radialaxis=dict(visible=True, range=[0, 100], gridcolor='#2E2E3A', color='#888899', tickfont=dict(size=10)),
-                    angularaxis=dict(gridcolor='#2E2E3A', color='#EAEAEA', tickfont=dict(size=11))
-                ),
-                showlegend=False,
-                height=420,
-                margin=dict(l=40, r=40, t=30, b=30),
-                font=dict(color='#888899', family='Inter', size=11)
-            )
-            st.plotly_chart(fig2, use_container_width=True)
+    st.markdown('<div class="section-title">PERFORMANCE RADAR</div>', unsafe_allow_html=True)
+    radar_vals = [
+        float(pct['acs_percentile'] or 0) * 100,
+        float(pct['avg_kast'] or 0),
+        float(pct['consistency_score'] or 0),
+        min(float(pct['matches_played'] or 0) / 50 * 100, 100),
+        float(pct['avg_fb'] or 0) * 100
+    ]
+    radar_cats = ['ACS Rank', 'KAST %', 'Consistency', 'Experience', 'First Kill %']
+    radar_vals_closed = radar_vals + [radar_vals[0]]
+    radar_cats_closed = radar_cats + [radar_cats[0]]
+    fig_radar = go.Figure()
+    fig_radar.add_trace(go.Scatterpolar(
+        r=radar_vals_closed,
+        theta=radar_cats_closed,
+        fill='toself',
+        fillcolor='rgba(245,197,24,0.15)',
+        line=dict(color='#F5C518', width=2.5),
+        marker=dict(size=7, color='#F5C518'),
+        name=str(pct['name'])
+    ))
+    fig_radar.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        polar=dict(
+            bgcolor='#1C1C24',
+            radialaxis=dict(visible=True, range=[0, 100], gridcolor='#2E2E3A', color='#888899', tickfont=dict(size=10)),
+            angularaxis=dict(gridcolor='#2E2E3A', color='#EAEAEA', tickfont=dict(size=12, family='Rajdhani'))
+        ),
+        showlegend=False,
+        height=420,
+        margin=dict(l=50, r=50, t=30, b=30),
+        font=dict(color='#888899', family='Inter', size=11)
+    )
+    st.plotly_chart(fig_radar, use_container_width=True)
     
     st.markdown('<div class="section-title">ANALYST INSIGHTS</div>', unsafe_allow_html=True)
-    
-    if acs_pct > 0.85:
-        st.markdown(f'<div class="insight"><b>🎯 Elite performer</b> — top {top_pct}% globally by ACS</div>', unsafe_allow_html=True)
+
+    gauge_cols = st.columns(3)
+
+    gauge_data = [
+        ("ACS Rank", float(pct['acs_percentile'] or 0) * 100, "%", "#F5C518"),
+        ("Consistency", float(pct['consistency_score'] or 0), "/100", "#00D4FF"),
+        ("KAST Rating", float(pct['avg_kast'] or 0), "%", "#7F77DD"),
+    ]
+
+    for i, (label, value, suffix, color) in enumerate(gauge_data):
+        with gauge_cols[i]:
+            fig_g = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=value,
+                number=dict(suffix=suffix, font=dict(color=color, size=28, family='Rajdhani')),
+                title=dict(text=label, font=dict(color='#888899', size=13, family='Inter')),
+                gauge=dict(
+                    axis=dict(range=[0, 100], tickcolor='#2E2E3A', tickfont=dict(color='#888899', size=10)),
+                    bar=dict(color=color, thickness=0.25),
+                    bgcolor='#1C1C24',
+                    borderwidth=0,
+                    steps=[
+                        dict(range=[0, 33], color='#1C1C24'),
+                        dict(range=[33, 66], color='#252530'),
+                        dict(range=[66, 100], color='#2E2E3A'),
+                    ],
+                    threshold=dict(line=dict(color=color, width=2), thickness=0.75, value=value)
+                )
+            ))
+            fig_g.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                height=220,
+                margin=dict(l=10, r=10, t=30, b=10),
+                font=dict(color='#888899')
+            )
+            st.plotly_chart(fig_g, use_container_width=True)
+
     if form_status == "PEAKING":
         st.markdown('<div class="insight"><b>🔺 Currently PEAKING</b> — above season avg for last 3 matches</div>', unsafe_allow_html=True)
-    if form_status == "DECLINING":
+    elif form_status == "DECLINING":
         st.markdown('<div class="insight"><b>🔻 Currently DECLINING</b> — below season avg for last 3 matches</div>', unsafe_allow_html=True)
-    if float(pct['consistency_score'] or 0) > 75:
-        st.markdown(f'<div class="insight"><b>📊 High consistency</b> — low variance across matches (score: {pct["consistency_score"]:.1f}/100)</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="insight"><b>📊 Consistent performer</b> — stable output across recent matches</div>', unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
