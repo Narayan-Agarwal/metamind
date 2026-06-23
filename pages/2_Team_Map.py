@@ -60,14 +60,15 @@ t_kd = agg['team_avg_kd'].iloc[0]
 t_kast = agg['team_avg_kast'].iloc[0]
 p_count = agg['player_count'].iloc[0]
 
-st.markdown(f"""
-<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px;">
-    <div class="stat-card" style="border-top-color:#F5C518;"><div class="stat-label">Team Avg ACS</div><div class="stat-value" style="color:#F5C518;">{t_acs}</div></div>
-    <div class="stat-card" style="border-top-color:#00D4FF;"><div class="stat-label">Team Avg K/D</div><div class="stat-value" style="color:#00D4FF;">{t_kd}</div></div>
-    <div class="stat-card" style="border-top-color:#7F77DD;"><div class="stat-label">Team Avg KAST</div><div class="stat-value" style="color:#7F77DD;">{t_kast}%</div></div>
-    <div class="stat-card"><div class="stat-label">Players Tracked</div><div class="stat-value">{p_count}</div></div>
-</div>
-""", unsafe_allow_html=True)
+m1, m2, m3, m4 = st.columns(4)
+with m1:
+    st.metric("Team Avg ACS", f"{float(t_acs):.1f}")
+with m2:
+    st.metric("Team Avg K/D", f"{float(t_kd):.2f}")
+with m3:
+    st.metric("Team Avg KAST", f"{float(t_kast):.1f}%")
+with m4:
+    st.metric("Players Tracked", int(p_count))
 
 # SECTION C
 st.markdown('<div class="section-title">ROSTER PERFORMANCE</div>', unsafe_allow_html=True)

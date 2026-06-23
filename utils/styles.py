@@ -479,6 +479,20 @@ def render_nav(active_page=''):
     </style>
     """, unsafe_allow_html=True)
 
+    with st.expander("📖 Stats Glossary", expanded=False):
+        st.markdown("""
+| Term | Full Name | What it means |
+|------|-----------|----------------|
+| **ACS** | Average Combat Score | Overall performance score per round — kills, damage, and assists combined |
+| **K/D** | Kill / Death Ratio | Kills divided by deaths — above 1.0 means more kills than deaths |
+| **KAST** | Kills / Assists / Survived / Traded | % of rounds where you had a positive impact |
+| **ADR** | Average Damage per Round | Average damage dealt to enemies each round |
+| **FB / First Kill** | First Blood / First Kill | % of rounds where you got the first kill |
+| **HS%** | Headshot Percentage | Share of kills that were headshots |
+| **Consistency** | Consistency Score | How stable your ACS is across matches — higher = more reliable |
+| **Pct** | Percentile | Your rank among all players — 90th Pct means better than 90% of players |
+""")
+
 HOME_HERO_HTML = """
 <!DOCTYPE html>
 <html>
