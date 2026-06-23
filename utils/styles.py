@@ -419,7 +419,7 @@ GLOBAL_CSS = """
 """
 
 PLOTLY_THEME = dict(
-    paper_bgcolor='transparent',
+    paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='#252530',
     font=dict(
         color='#888899', family='Inter',

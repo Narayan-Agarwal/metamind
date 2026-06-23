@@ -81,8 +81,10 @@ def get_leaderboard(engine, min_matches=10, sort_by='avg_acs', region=None):
         where += " AND region = %(region)s"
         params["region"] = region
     
-    valid_sorts = ['avg_acs','avg_kd', 'consistency_score','avg_kast','avg_fb']
-    if sort_by not in valid_sorts:
+    valid_sorts = ['avg_acs','avg_kd', 'consistency_score','avg_kast','avg_fb','consistency','kast_pct','first_kill_pct']
+    sort_map = {'consistency': 'consistency_score', 'kast_pct': 'avg_kast', 'first_kill_pct': 'avg_fb'}
+    sort_by = sort_map.get(sort_by, sort_by)
+    if sort_by not in ['avg_acs','avg_kd','consistency_score','avg_kast','avg_fb']:
         sort_by = 'avg_acs'
     
     return pd.read_sql(f"""
