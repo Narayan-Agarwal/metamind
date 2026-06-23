@@ -36,33 +36,35 @@ if not regional.empty:
         "Korea": "#EF9F27", "South Asia": "#FF6B6B"
     }
     
-    marker_colors = [colors.get(r, "#8888AA") for r in regional['region']]
-    
-    fig.add_trace(go.Bar(
-        name="Avg ACS", x=regional['region'], y=regional['avg_acs'],
-        marker_color=marker_colors
-    ))
-    fig.add_trace(go.Bar(
-        name="Avg K/D (x100)", x=regional['region'], y=regional['avg_kd'] * 100,
-        marker_color=[c for c in marker_colors],
-        opacity=0.7
-    ))
-    
+    for i, row in regional.iterrows():
+        region_name = row['region']
+        color = colors.get(region_name, '#8888AA')
+        fig.add_trace(go.Bar(
+            name=region_name,
+            x=[region_name],
+            y=[row['avg_acs']],
+            marker=dict(
+                color=color,
+                line=dict(color=color, width=1),
+                opacity=0.9
+            ),
+            text=[f"{row['avg_acs']:.0f}"],
+            textposition='outside',
+            textfont=dict(color='#EAEAEA', size=12, family='Rajdhani'),
+            hovertemplate=f"<b>{region_name}</b><br>Avg ACS: %{{y:.1f}}<br>Avg K/D: {row['avg_kd']:.2f}<extra></extra>"
+        ))
     fig.update_layout(
         **PLOTLY_THEME,
         barmode='group',
-        height=400,
+        height=420,
         showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+        bargap=0.25,
+        bargroupgap=0.1,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        title=dict(text='Regional ACS Comparison', font=dict(color='#EAEAEA', family='Rajdhani', size=16))
     )
-    fig.update_xaxes(**AXIS_STYLE)
-    fig.update_yaxes(**AXIS_STYLE)
+    fig.update_xaxes(**AXIS_STYLE, tickfont=dict(color='#EAEAEA', size=13, family='Rajdhani'))
+    fig.update_yaxes(**AXIS_STYLE, title_text='Average ACS')
     st.plotly_chart(fig, use_container_width=True)
 
 indian = get_indian_spotlight(engine)

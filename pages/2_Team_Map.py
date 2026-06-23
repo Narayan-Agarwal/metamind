@@ -116,18 +116,20 @@ with cols[0]:
     st.markdown('<div class="section-title">AGENT DNA</div>', unsafe_allow_html=True)
     if not agents.empty:
         agents_rev = agents.iloc[::-1]
+        agent_colors = [
+            f'rgba(245,197,24,{min(0.4 + 0.6*(v/agents_rev["avg_acs_on_agent"].max()), 1.0):.2f})'
+            for v in agents_rev['avg_acs_on_agent']
+        ]
         fig_agent = go.Figure(go.Bar(
             x=agents_rev['avg_acs_on_agent'],
             y=agents_rev['agent'],
             orientation='h',
-            marker=dict(
-                color='#F5C518',
-                line=dict(color='rgba(245,197,24,0.5)', width=1)
-            ),
-            text=agents_rev['times_played'].apply(lambda x: f"{x}x"),
+            marker=dict(color=agent_colors, line=dict(color='rgba(245,197,24,0.3)', width=1)),
+            text=agents_rev.apply(lambda r: f"{r['avg_acs_on_agent']:.0f} ACS · {r['times_played']}x", axis=1),
             textposition='inside',
             insidetextanchor='end',
-            textfont=dict(color='#1C1C24', family='Inter')
+            textfont=dict(color='#1C1C24', family='Rajdhani', size=12),
+            hovertemplate='<b>%{y}</b><br>Avg ACS: %{x:.1f}<extra></extra>'
         ))
         fig_agent.update_layout(
             **PLOTLY_THEME,

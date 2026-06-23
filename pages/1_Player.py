@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 from sqlalchemy import text
 from db.connection import get_engine
@@ -108,9 +109,9 @@ with cols[1]:
     pb_html = ""
     p_metrics = [
         ("ACS", float(pct['acs_percentile'] or 0)),
-        ("K/D", float(pct['kd_percentile'] or 0)),
-        ("FIRST KILL", float(pct['fb_percentile'] or 0)),
-        ("KAST", float(pct['avg_kast'] or 0) / 100)
+        ("KAST", float(pct['avg_kast'] or 0) / 100),
+        ("Consistency", float(pct['consistency_score'] or 0) / 100),
+        ("Matches", min(float(pct['matches_played'] or 0) / 50, 1.0))
     ]
     
     for p_lab, p_val in p_metrics:
@@ -130,36 +131,91 @@ with cols[1]:
     if not stats_df.empty:
         stats_df = stats_df.sort_values('match_date').reset_index(drop=True)
         stats_df['match_index'] = stats_df.index + 1
-        
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.08)
-        
-        fig.add_trace(go.Scatter(
-            x=stats_df['match_index'], y=stats_df['acs'], mode='lines+markers',
-            line=dict(color='#F5C518', width=2.5), marker=dict(size=6, color='#F5C518'),
-            fill='tozeroy', fillcolor='rgba(245,197,24,0.05)', name='ACS',
-            text=stats_df.apply(lambda r: f"{r['match_date']}<br>{r['map_name']}<br>{r['kills']}K / {r['deaths']}D<br>ACS: {r['acs']}", axis=1),
-            hoverinfo="text"
-        ), row=1, col=1)
-        
-        fig.add_hline(y=avg_acs, line_dash="dash", line_color="rgba(255,255,255,0.2)", annotation_text="Season avg", annotation_font_color="#888899", row=1, col=1)
-        
-        peak_idx = stats_df['acs'].idxmax()
-        peak_row = stats_df.iloc[peak_idx]
-        fig.add_trace(go.Scatter(
-            x=[peak_row['match_index']], y=[peak_row['acs']],
-            mode='markers', marker=dict(symbol='star', size=16, color='#FFD700'),
-            name='Peak', hoverinfo='skip'
-        ), row=1, col=1)
-        
-        fig.add_trace(go.Bar(
-            x=stats_df['match_index'], y=stats_df['kills'],
-            marker_color='#00D4FF', opacity=0.7, name="Kills"
-        ), row=2, col=1)
-        
-        fig.update_layout(**PLOTLY_THEME, height=450, showlegend=False, title=dict(text='Performance Timeline', font=dict(color='#EAEAEA', family='Rajdhani', size=16)))
-        fig.update_xaxes(**AXIS_STYLE)
-        fig.update_yaxes(**AXIS_STYLE)
-        st.plotly_chart(fig, use_container_width=True)
+        stats_df['acs_safe'] = stats_df['acs'].fillna(0)
+        stats_df['kills_safe'] = stats_df['kills'].fillna(0)
+        stats_df['deaths_safe'] = stats_df['deaths'].fillna(1).clip(lower=1)
+
+        tab1, tab2 = st.tabs(["📈 Timeline", "🕸️ Radar"])
+
+        with tab1:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter3d(
+                x=stats_df['match_index'],
+                y=stats_df['acs_safe'],
+                z=stats_df['kills_safe'],
+                mode='lines+markers',
+                line=dict(color='#F5C518', width=4),
+                marker=dict(
+                    size=6,
+                    color=stats_df['acs_safe'],
+                    colorscale=[[0, '#2E2E3A'], [0.5, '#F5C518'], [1, '#FFD700']],
+                    showscale=False
+                ),
+                text=stats_df.apply(lambda r: f"Match {int(r['match_index'])}<br>ACS: {r['acs_safe']:.0f}<br>Kills: {r['kills_safe']:.0f}", axis=1),
+                hoverinfo='text',
+                name='Performance'
+            ))
+            fig.add_trace(go.Scatter3d(
+                x=[stats_df.loc[stats_df['acs_safe'].idxmax(), 'match_index']],
+                y=[stats_df['acs_safe'].max()],
+                z=[stats_df.loc[stats_df['acs_safe'].idxmax(), 'kills_safe']],
+                mode='markers',
+                marker=dict(size=12, color='#FFD700', symbol='diamond'),
+                name='Peak',
+                hoverinfo='skip'
+            ))
+            fig.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                scene=dict(
+                    bgcolor='#1C1C24',
+                    xaxis=dict(title='Match', gridcolor='#2E2E3A', color='#888899', showbackground=False),
+                    yaxis=dict(title='ACS', gridcolor='#2E2E3A', color='#888899', showbackground=False),
+                    zaxis=dict(title='Kills', gridcolor='#2E2E3A', color='#888899', showbackground=False),
+                    camera=dict(eye=dict(x=1.5, y=1.5, z=0.8))
+                ),
+                height=450,
+                showlegend=False,
+                margin=dict(l=0, r=0, t=10, b=0),
+                font=dict(color='#888899', family='Inter', size=11)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with tab2:
+            radar_vals = [
+                float(pct['acs_percentile'] or 0) * 100,
+                float(pct['avg_kast'] or 0),
+                float(pct['consistency_score'] or 0),
+                min(float(pct['matches_played'] or 0) / 50 * 100, 100),
+                float(pct['avg_kd'] or 0) * 50
+            ]
+            radar_cats = ['ACS Rank', 'KAST %', 'Consistency', 'Experience', 'K/D Index']
+            radar_vals_closed = radar_vals + [radar_vals[0]]
+            radar_cats_closed = radar_cats + [radar_cats[0]]
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatterpolar(
+                r=radar_vals_closed,
+                theta=radar_cats_closed,
+                fill='toself',
+                fillcolor='rgba(245,197,24,0.15)',
+                line=dict(color='#F5C518', width=2),
+                marker=dict(size=6, color='#F5C518'),
+                name=str(pct['name'])
+            ))
+            fig2.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                polar=dict(
+                    bgcolor='#1C1C24',
+                    radialaxis=dict(visible=True, range=[0, 100], gridcolor='#2E2E3A', color='#888899', tickfont=dict(size=10)),
+                    angularaxis=dict(gridcolor='#2E2E3A', color='#EAEAEA', tickfont=dict(size=11))
+                ),
+                showlegend=False,
+                height=420,
+                margin=dict(l=40, r=40, t=30, b=30),
+                font=dict(color='#888899', family='Inter', size=11)
+            )
+            st.plotly_chart(fig2, use_container_width=True)
     
     st.markdown('<div class="section-title">ANALYST INSIGHTS</div>', unsafe_allow_html=True)
     
