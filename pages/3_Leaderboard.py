@@ -39,19 +39,17 @@ if not regional.empty:
     for i, row in regional.iterrows():
         region_name = row['region']
         color = colors.get(region_name, '#8888AA')
+        kd_val = float(row['avg_kd']) if row['avg_kd'] is not None else 0.0
+        acs_val = float(row['avg_acs']) if row['avg_acs'] is not None else 0.0
         fig.add_trace(go.Bar(
             name=region_name,
             x=[region_name],
-            y=[row['avg_acs']],
-            marker=dict(
-                color=color,
-                line=dict(color=color, width=1),
-                opacity=0.9
-            ),
-            text=[f"{row['avg_acs']:.0f}"],
+            y=[acs_val],
+            marker=dict(color=color, line=dict(color=color, width=1), opacity=0.9),
+            text=[f"{acs_val:.0f}"],
             textposition='outside',
             textfont=dict(color='#EAEAEA', size=12, family='Rajdhani'),
-            hovertemplate=f"<b>{region_name}</b><br>Avg ACS: %{{y:.1f}}<br>Avg K/D: {float(row['avg_kd']):.2f}<extra></extra>"
+            hovertemplate=f"<b>{region_name}</b><br>Avg ACS: {acs_val:.1f}<br>Avg K/D: {kd_val:.2f}<extra></extra>"
         ))
     fig.update_layout(
         **PLOTLY_THEME,
