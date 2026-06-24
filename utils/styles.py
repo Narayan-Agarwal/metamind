@@ -479,6 +479,8 @@ def render_nav(active_page=''):
     </style>
     """, unsafe_allow_html=True)
 
+def render_glossary():
+    st.markdown("---")
     with st.expander("📖 Stats Glossary", expanded=False):
         st.markdown("""
 | Term | Full Name | What it means |

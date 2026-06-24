@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 from sqlalchemy import text
 from db.connection import get_engine
 from db.queries import get_all_players, get_player_percentiles, get_player_stats
-from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav
+from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav, render_glossary
 
 st.set_page_config(page_title="Player Intelligence", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -209,3 +209,4 @@ with cols[1]:
         st.markdown('<div class="insight"><b>📊 Consistent performer</b> — stable output across recent matches</div>', unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
+render_glossary()

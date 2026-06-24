@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from db.connection import get_engine
 from db.queries import get_leaderboard, get_regional_comparison, get_indian_spotlight
-from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav
+from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav, render_glossary
 
 st.set_page_config(page_title="Global Leaderboard", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -144,3 +144,4 @@ else:
     st.warning("No players found matching criteria.")
 
 st.markdown('</div>', unsafe_allow_html=True)
+render_glossary()

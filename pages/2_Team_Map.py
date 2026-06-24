@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from db.connection import get_engine
 from db.queries import get_all_players, get_player_percentiles
-from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav
+from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav, render_glossary
 
 st.set_page_config(page_title="Player Comparison", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -174,3 +174,4 @@ for i, (name, pct) in enumerate(pct_data.items()):
         st.plotly_chart(fig_g, use_container_width=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
+render_glossary()

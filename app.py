@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from db.connection import get_engine
 from db.queries import get_leaderboard
-from utils.styles import GLOBAL_CSS, render_nav, HOME_HERO_HTML
+from utils.styles import GLOBAL_CSS, render_nav, HOME_HERO_HTML, render_glossary
 import pandas as pd
 
 st.set_page_config(
@@ -75,3 +75,4 @@ for col, (_, row) in zip(cols, top5.iterrows()):
     </div>""", unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
+render_glossary()
