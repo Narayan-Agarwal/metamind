@@ -145,6 +145,30 @@ def get_indian_spotlight(engine):
         LIMIT 5
     """, engine)
 
+def get_top_players(engine, limit=15):
+    return pd.read_sql(f"""
+        SELECT
+            name,
+            ROUND(COALESCE(avg_acs,0)::numeric,1) AS avg_acs,
+            ROUND(COALESCE(consistency_score,0)::numeric,1) AS consistency_score,
+            COALESCE(matches_played,0) AS matches_played,
+            COALESCE(region,'Unknown') AS region
+        FROM mv_player_percentiles
+        WHERE avg_acs IS NOT NULL AND matches_played >= 5
+        ORDER BY avg_acs DESC
+        LIMIT {limit}
+    """, engine)
+
+def get_acs_distribution(engine):
+    return pd.read_sql("""
+        SELECT
+            ROUND(COALESCE(avg_acs,0)::numeric,0) AS avg_acs,
+            ROUND(COALESCE(consistency_score,0)::numeric,1) AS consistency_score
+        FROM mv_player_percentiles
+        WHERE avg_acs IS NOT NULL AND matches_played >= 3
+        ORDER BY avg_acs ASC
+    """, engine)
+
 def get_platform_stats(engine):
     with engine.connect() as conn:
         return {
