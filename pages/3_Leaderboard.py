@@ -113,31 +113,28 @@ if not lb_df.empty:
     start = (page - 1) * per_page
     chunk = lb_df.iloc[start:start + per_page]
 
-    lb_html = """
-    <div class="lb-table">
-        <div class="lb-header">
-            <div>RANK</div><div>PLAYER</div><div>REGION</div>
-            <div>ACS</div><div>KAST</div><div>CONSISTENCY</div><div>MATCHES</div>
-        </div>
-    """
-    for _, row in chunk.iterrows():
-        rank = int(row['rank_display'])
-        row_cls = "lb-row top3" if rank <= 3 else "lb-row top10" if rank <= 10 else "lb-row"
-        r_disp = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"#{rank}"
-        tier_label, tier_color = consistency_tier(row['consistency'])
-        lb_html += f"""
-        <div class="{row_cls}">
-            <div class="lb-rank">{r_disp}</div>
-            <div class="lb-name">{row['name']}</div>
-            <div class="lb-stat" style="color:#888899;">{row['region'] or '—'}</div>
-            <div class="lb-stat highlight">{row['avg_acs']:.1f}</div>
-            <div class="lb-stat">{row['kast_pct']:.1f}%</div>
-            <div class="lb-stat" style="color:{tier_color};">{row['consistency']:.1f}</div>
-            <div class="lb-stat" style="color:#888899;">{row['matches_played']}</div>
-        </div>
-        """
-    lb_html += "</div>"
-    st.markdown(lb_html, unsafe_allow_html=True)
+    import numpy as np
+    chunk = chunk.copy()
+    chunk['region'] = chunk['region'].replace({float('nan'): '—'}).fillna('—')
+    chunk['rank'] = chunk['rank_display'].apply(lambda r: '🥇' if r==1 else '🥈' if r==2 else '🥉' if r==3 else f"#{int(r)}")
+    chunk['tier'] = chunk['consistency'].apply(lambda c: '🔵 Elite' if float(c)>=70 else '🟡 Solid' if float(c)>=40 else '🔴 Volatile')
+    display_df = chunk[['rank','name','region','avg_acs','kast_pct','consistency','tier','matches_played']].copy()
+    display_df.columns = ['Rank','Player','Region','ACS','KAST %','Consistency','Tier','Matches']
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            'Rank': st.column_config.TextColumn(width='small'),
+            'Player': st.column_config.TextColumn(width='medium'),
+            'Region': st.column_config.TextColumn(width='small'),
+            'ACS': st.column_config.NumberColumn(format='%.1f', width='small'),
+            'KAST %': st.column_config.NumberColumn(format='%.1f', width='small'),
+            'Consistency': st.column_config.NumberColumn(format='%.1f', width='small'),
+            'Tier': st.column_config.TextColumn(width='small'),
+            'Matches': st.column_config.NumberColumn(format='%d', width='small'),
+        }
+    )
 else:
     st.warning("No players found matching criteria.")
 
@@ -146,6 +143,7 @@ indian = get_indian_spotlight(engine)
 if not indian.empty:
     st.markdown('<div class="section-title">🇮🇳 INDIA SPOTLIGHT</div>', unsafe_allow_html=True)
     ind_cols = st.columns(len(indian))
+    indian['region'] = indian['region'].fillna('—') if 'region' in indian.columns else '—'
     for i, (_, r) in enumerate(indian.iterrows()):
         with ind_cols[i]:
             tier_label, tier_color = consistency_tier(r['consistency'])

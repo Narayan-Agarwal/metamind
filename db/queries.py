@@ -95,13 +95,11 @@ def get_leaderboard(engine, min_matches=10, sort_by='avg_acs', region=None):
             name,
             region,
             nationality,
-            ROUND(avg_acs::numeric, 1) AS avg_acs,
-            ROUND(avg_kd::numeric, 2) AS avg_kd,
-            ROUND(consistency_score::numeric, 1) 
-                AS consistency,
-            ROUND(avg_kast::numeric, 1) AS kast_pct,
-            ROUND(avg_fb::numeric, 2) 
-                AS first_kill_pct,
+            ROUND(COALESCE(avg_acs,0)::numeric, 1) AS avg_acs,
+            ROUND(COALESCE(avg_kd,0)::numeric, 2) AS avg_kd,
+            ROUND(COALESCE(consistency_score,0)::numeric, 1) AS consistency,
+            ROUND(COALESCE(avg_kast,0)::numeric, 1) AS kast_pct,
+            ROUND(COALESCE(avg_fb,0)::numeric, 2) AS first_kill_pct,
             matches_played
         FROM mv_player_percentiles
         {where}
