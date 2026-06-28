@@ -135,7 +135,7 @@ def get_indian_spotlight(engine):
             ROUND(COALESCE(avg_acs,0)::numeric,1) AS avg_acs,
             ROUND(COALESCE(avg_kd,0)::numeric,2) AS avg_kd,
             ROUND(COALESCE(consistency_score,0)::numeric,1) AS consistency,
-            ROUND(COALESCE(acs_percentile,0)*100::numeric,0) AS global_percentile,
+            ROUND((COALESCE(acs_percentile,0)*100)::numeric,0) AS global_percentile,
             COALESCE(matches_played,0) AS matches_played
         FROM mv_player_percentiles
         WHERE name IN ({placeholders})
