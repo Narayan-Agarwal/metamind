@@ -132,11 +132,15 @@ def get_indian_spotlight(engine):
     return pd.read_sql(f"""
         SELECT
             name,
-            ROUND(COALESCE(avg_acs,0)::numeric,1) AS avg_acs,
-            ROUND(COALESCE(avg_kd,0)::numeric,2) AS avg_kd,
-            ROUND(COALESCE(consistency_score,0)::numeric,1) AS consistency,
+            ROUND(COALESCE(avg_acs,0)::numeric,1)             AS avg_acs,
+            ROUND(COALESCE(avg_kd,0)::numeric,2)              AS avg_kd,
+            ROUND(COALESCE(consistency_score,0)::numeric,1)   AS consistency,
             ROUND((COALESCE(acs_percentile,0)*100)::numeric,0) AS global_percentile,
-            COALESCE(matches_played,0) AS matches_played
+            COALESCE(matches_played,0)                         AS matches_played,
+            ROUND(COALESCE(avg_kast,0)::numeric,1)            AS avg_kast,
+            ROUND(COALESCE(avg_fb,0)*100::numeric,1)          AS avg_fb_pct,
+            ROUND(COALESCE(avg_hs,0)*100::numeric,1)          AS avg_hs_pct,
+            ROUND(COALESCE(avg_adr,0)::numeric,1)             AS avg_adr
         FROM mv_player_percentiles
         WHERE name IN ({placeholders})
         ORDER BY avg_acs DESC

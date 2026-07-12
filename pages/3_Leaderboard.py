@@ -20,22 +20,171 @@ def consistency_tier(score):
     elif s >= 40: return 'Solid', '#F5C518'
     else: return 'Volatile', '#FF4757'
 
-# ── SECTION 1: INDIA SPOTLIGHT (fixed, not affected by filters) ──
+import streamlit.components.v1 as components
+
 try:
     indian = get_indian_spotlight(engine)
     if not indian.empty:
         st.markdown('<div class="section-title">🇮🇳 INDIA SPOTLIGHT</div>', unsafe_allow_html=True)
-        st.caption("Top Indian VCT players tracked in the dataset.")
-        ind_cols = st.columns(len(indian))
-        for i, (_, r) in enumerate(indian.iterrows()):
-            tier_label, tier_color = consistency_tier(r['consistency'])
-            with ind_cols[i]:
-                st.markdown(f'<div style="border-left:3px solid {tier_color}; padding-left:8px; margin-bottom:4px;"><b style="color:{tier_color}; font-family:Rajdhani,sans-serif; font-size:16px;">{r["name"]}</b></div>', unsafe_allow_html=True)
-                st.metric("Avg ACS", f"{float(r['avg_acs']):.1f}")
-                st.metric("Consistency", f"{float(r['consistency']):.1f}")
-                st.metric("Global Rank", f"Top {max(1, 100 - int(float(r['global_percentile'])))}%")
-except Exception:
-    pass
+        st.caption("Top Indian VCT players in the global dataset — ranked by ACS.")
+
+        def tier_info(cons):
+            c = float(cons)
+            if c >= 70: return 'ELITE', '#00D4FF', 'rgba(0,212,255,0.08)'
+            elif c >= 40: return 'SOLID', '#F5C518', 'rgba(245,197,24,0.08)'
+            else: return 'VOLATILE', '#FF4757', 'rgba(255,71,87,0.08)'
+
+        def make_stat_bar(label, value, max_val, color, delay):
+            pct = min(100, round(float(value) / max_val * 100, 1))
+            return f"""
+            <div style="margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
+                    <span style="font-size:10px; color:#888899; font-family:Inter,sans-serif; letter-spacing:1px; text-transform:uppercase;">{label}</span>
+                    <span style="font-size:11px; color:#EAEAEA; font-family:Rajdhani,sans-serif; font-weight:600;">{float(value):.1f}</span>
+                </div>
+                <div style="background:#1C1C24; border-radius:3px; height:5px; overflow:hidden;">
+                    <div style="height:5px; background:{color}; border-radius:3px; width:0%;
+                        animation: fillBar{delay} 1.2s ease-out {delay*0.15:.1f}s forwards;">
+                    </div>
+                </div>
+            </div>
+            <style>
+            @keyframes fillBar{delay} {{
+                from {{ width: 0%; }}
+                to {{ width: {pct}%; }}
+            }}
+            </style>
+            """
+
+        def make_radar_svg(vals, color):
+            import math
+            n = len(vals)
+            cx, cy, r = 60, 60, 45
+            points = []
+            for i, v in enumerate(vals):
+                angle = math.pi * 2 * i / n - math.pi / 2
+                rv = r * (float(v) / 100)
+                x = cx + rv * math.cos(angle)
+                y = cy + rv * math.sin(angle)
+                points.append((x, y))
+            grid_points = []
+            for i in range(n):
+                angle = math.pi * 2 * i / n - math.pi / 2
+                x = cx + r * math.cos(angle)
+                y = cy + r * math.sin(angle)
+                grid_points.append(f"{x:.1f},{y:.1f}")
+            polygon_pts = ' '.join([f"{x:.1f},{y:.1f}" for x,y in points])
+            grid_poly = ' '.join(grid_points)
+            r,g,b = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
+            return f"""
+            <svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                <polygon points="{grid_poly}" fill="none" stroke="#2E2E3A" stroke-width="1"/>
+                <polygon points="{polygon_pts}" fill="rgba({r},{g},{b},0.2)" stroke="{color}" stroke-width="1.5"
+                    style="animation: radarPulse 2s ease-in-out infinite alternate;">
+                </polygon>
+                <style>
+                @keyframes radarPulse {{
+                    from {{ opacity: 0.7; }}
+                    to {{ opacity: 1; }}
+                }}
+                </style>
+            </svg>
+            """
+
+        cards_html = """
+        <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+        <div style="display:flex; gap:16px; flex-wrap:wrap; padding:8px 0 16px 0;">
+        """
+
+        for rank_i, (_, r) in enumerate(indian.iterrows()):
+            tier_label, tier_color, tier_bg = tier_info(r['consistency'])
+            gp = int(float(r['global_percentile']))
+            top_pct = max(1, 100 - gp)
+
+            radar_vals = [
+                min(float(r['avg_acs']) / 300 * 100, 100),
+                float(r['avg_kast']),
+                float(r['consistency']),
+                float(r['avg_hs_pct']),
+                min(float(r['avg_fb_pct']), 100),
+            ]
+            radar_svg = make_radar_svg(radar_vals, tier_color)
+
+            stat_bars = (
+                make_stat_bar('ACS', r['avg_acs'], 300, tier_color, rank_i*5+1) +
+                make_stat_bar('KAST %', r['avg_kast'], 100, tier_color, rank_i*5+2) +
+                make_stat_bar('HS %', r['avg_hs_pct'], 50, tier_color, rank_i*5+3) +
+                make_stat_bar('FIRST KILL %', r['avg_fb_pct'], 30, tier_color, rank_i*5+4)
+            )
+
+            rank_badge = ['🥇','🥈','🥉','④','⑤'][rank_i]
+
+            r_hex = int(tier_color[1:3],16)
+            g_hex = int(tier_color[3:5],16)
+            b_hex = int(tier_color[5:7],16)
+
+            cards_html += f"""
+            <div style="
+                flex: 1; min-width: 200px; max-width: 240px;
+                background: #1A1A24;
+                border: 1px solid rgba({r_hex},{g_hex},{b_hex},0.3);
+                border-top: 3px solid {tier_color};
+                border-radius: 12px;
+                padding: 18px 16px;
+                position: relative;
+                overflow: hidden;
+                animation: cardIn 0.5s ease-out {rank_i*0.1:.1f}s both;
+                box-shadow: 0 0 20px rgba({r_hex},{g_hex},{b_hex},0.08);
+            ">
+                <style>
+                @keyframes cardIn {{
+                    from {{ opacity:0; transform: translateY(16px); }}
+                    to {{ opacity:1; transform: translateY(0); }}
+                }}
+                </style>
+
+                <div style="position:absolute; top:0; left:0; right:0; bottom:0;
+                    background: radial-gradient(ellipse at top left, rgba({r_hex},{g_hex},{b_hex},0.06) 0%, transparent 60%);
+                    pointer-events:none;">
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                    <div>
+                        <div style="font-size:11px; color:{tier_color}; font-family:Rajdhani,sans-serif;
+                            font-weight:700; letter-spacing:2px; margin-bottom:2px;">
+                            {rank_badge} {tier_label}
+                        </div>
+                        <div style="font-family:Rajdhani,sans-serif; font-size:22px; font-weight:700;
+                            color:#EAEAEA; line-height:1.1;
+                            text-shadow: 0 0 12px rgba({r_hex},{g_hex},{b_hex},0.5);">
+                            {r['name']}
+                        </div>
+                        <div style="font-size:11px; color:#888899; margin-top:2px;">
+                            🇮🇳 Top {top_pct}% globally
+                        </div>
+                    </div>
+                    <div style="opacity:0.9;">{radar_svg}</div>
+                </div>
+
+                <div style="background:rgba({r_hex},{g_hex},{b_hex},0.08); border-radius:6px; padding:8px 10px; margin-bottom:12px; text-align:center;">
+                    <div style="font-family:Rajdhani,sans-serif; font-size:32px; font-weight:700; color:{tier_color};
+                        line-height:1; text-shadow: 0 0 16px rgba({r_hex},{g_hex},{b_hex},0.6);">
+                        {float(r['avg_acs']):.0f}
+                    </div>
+                    <div style="font-size:10px; color:#888899; letter-spacing:1.5px; text-transform:uppercase; margin-top:2px;">
+                        Avg ACS · {int(r['matches_played'])} matches
+                    </div>
+                </div>
+
+                {stat_bars}
+
+            </div>
+            """
+
+        cards_html += "</div>"
+        components.html(cards_html, height=420, scrolling=False)
+except Exception as e:
+    st.info(f"India Spotlight temporarily unavailable.")
 
 st.divider()
 
