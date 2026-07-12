@@ -157,13 +157,14 @@ def get_top_players(engine, limit=15):
         LIMIT {limit}
     """, engine)
 
-def get_acs_distribution(engine):
-    return pd.read_sql("""
+def get_acs_distribution(engine, min_matches=3):
+    return pd.read_sql(f"""
         SELECT
-            ROUND(COALESCE(avg_acs,0)::numeric,0) AS avg_acs,
+            name,
+            ROUND(COALESCE(avg_acs,0)::numeric,1) AS avg_acs,
             ROUND(COALESCE(consistency_score,0)::numeric,1) AS consistency_score
         FROM mv_player_percentiles
-        WHERE avg_acs IS NOT NULL AND matches_played >= 3
+        WHERE avg_acs IS NOT NULL AND matches_played >= {int(min_matches)}
         ORDER BY avg_acs ASC
     """, engine)
 
