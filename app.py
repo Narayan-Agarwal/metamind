@@ -46,11 +46,11 @@ st.markdown('<div class="section-title">EXPLORE</div>', unsafe_allow_html=True)
 f1,f2,f3 = st.columns(3)
 features = [
     ('/Player','👤','PLAYER INTELLIGENCE',
-     'Track individual form, peak matches, percentile rankings and performance trends across the full VCT dataset.'),
-    ('/Team_Map','🗺️','TEAM MAP STRATEGY',
-     'Analyze map win rates, attack vs defense splits, and economy patterns for any pro team.'),
-    ('/Leaderboard','🏆','GLOBAL LEADERBOARD',
-     'Rank all 11,000+ players by ACS, K/D, and consistency. Includes Indian pro player spotlight.'),
+     'Select any VCT pro — see their ACS percentile rank, radar profile, agent DNA, consistency score, and form status against the global field.'),
+    ('/Team_Map','⚔️','PLAYER COMPARISON',
+     'Compare up to 3 players head-to-head with radar charts, mirrored stat duels, gauge indicators, and a full stat breakdown.'),
+    ('/Leaderboard','🏆','SCOUT\'S DASHBOARD',
+     'Filter 900+ players by consistency tier. Spot elite talent on the skill vs consistency scatter map, search any player, and track India\'s top pros.'),
 ]
 for col,(href,icon,title,desc) in zip([f1,f2,f3], features):
     col.markdown(f"""

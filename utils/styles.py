@@ -2,12 +2,15 @@ import streamlit as st
 
 GLOBAL_CSS = """
 <style>
+:root { --page-accent: #F5C518; }
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 * {box-sizing:border-box;}
 .stApp {
   background:#1C1C24 !important;
   font-family:'Inter',sans-serif;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zm0 34L0 84V50l28 16 28-16v34L28 100z' fill='none' stroke='%232E2E3A' stroke-width='0.4' opacity='0.35'/%3E%3C/svg%3E") !important;
+  background-size: 56px 100px !important;
 }
 [data-testid="stSidebar"] {display:none !important;}
 [data-testid="collapsedControl"] {
@@ -116,6 +119,10 @@ GLOBAL_CSS = """
 .stat-delta.up {color:#00D4FF;}
 .stat-delta.down {color:#FF4757;}
 
+.page-accent-cyan { --accent:#00D4FF; }
+.page-accent-gold { --accent:#F5C518; }
+.page-accent-red  { --accent:#FF4757; }
+
 /* ── SECTION TITLE ── */
 .section-title {
   font-family:'Rajdhani',sans-serif;
@@ -124,7 +131,7 @@ GLOBAL_CSS = """
   text-transform:uppercase;
   margin:28px 0 16px;
   padding-left:12px;
-  border-left:3px solid #F5C518;
+  border-left:3px solid var(--page-accent, #F5C518);
 }
 
 /* ── INSIGHT CARDS ── */
@@ -347,18 +354,41 @@ GLOBAL_CSS = """
 /* ── FEATURE CARDS ── */
 .feat-card {
   background:#252530;
-  border:1px solid #2E2E3A;
   border-radius:10px; padding:28px;
   height:100%;
-  transition:border-color 0.2s,
-    box-shadow 0.2s, transform 0.2s;
+  transition:box-shadow 0.2s, transform 0.2s;
   cursor:pointer; text-decoration:none;
   display:block;
+  position:relative;
+  border:1px solid transparent;
+  background-clip:padding-box;
+}
+.feat-card::before {
+  content:'';
+  position:absolute;
+  inset:-1px;
+  border-radius:11px;
+  padding:1px;
+  background:linear-gradient(135deg, #F5C518, #2E2E3A, #00D4FF);
+  -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite:destination-out;
+  mask-composite:exclude;
+  opacity:0.4;
+  transition:opacity 0.2s;
+  animation:borderRotate 4s linear infinite;
+  background-size:300% 300%;
+}
+.feat-card:hover::before {
+  opacity:1;
 }
 .feat-card:hover {
-  border-color:#F5C518;
-  box-shadow:0 8px 32px rgba(245,197,24,0.1);
+  box-shadow:0 8px 32px rgba(245,197,24,0.12);
   transform:translateY(-2px);
+}
+@keyframes borderRotate {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 .feat-icon {
   font-size:32px; margin-bottom:16px;

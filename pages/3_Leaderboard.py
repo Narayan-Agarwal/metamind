@@ -8,6 +8,7 @@ from utils.styles import GLOBAL_CSS, AXIS_STYLE, render_nav, render_glossary
 
 st.set_page_config(page_title="Global Leaderboard", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+st.markdown('<style>:root{--page-accent:#FF4757;}</style>', unsafe_allow_html=True)
 render_nav(active_page='/Leaderboard')
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 

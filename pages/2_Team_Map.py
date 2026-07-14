@@ -6,6 +6,7 @@ from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav, rende
 
 st.set_page_config(page_title="Player Comparison", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+st.markdown('<style>:root{--page-accent:#F5C518;}</style>', unsafe_allow_html=True)
 render_nav(active_page='/Team_Map')
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
@@ -140,6 +141,55 @@ for col_i, (label, key) in enumerate(bar_stats):
             font=dict(color='#888899')
         )
         st.plotly_chart(fig_bar, use_container_width=True)
+
+st.markdown('<div class="section-title">⚔️ FACE-OFF — STAT DUEL</div>', unsafe_allow_html=True)
+st.caption("Mirrored bars — each stat races from center. Longer bar wins that category.")
+
+faceoff_stats = [
+    ('Avg ACS', 'avg_acs', 300),
+    ('KAST %', 'avg_kast', 100),
+    ('Consistency', 'consistency_score', 100),
+    ('Matches', 'matches_played', 50),
+]
+player_names_list = list(pct_data.keys())
+colors_fo = RADAR_COLORS[:len(player_names_list)]
+
+fig_fo = go.Figure()
+for stat_label, stat_key, max_val in faceoff_stats:
+    for i, name in enumerate(player_names_list):
+        val = min(float(pct_data[name][stat_key] or 0), max_val)
+        pct_val = val / max_val * 100
+        mirror_val = -pct_val if i == 0 else pct_val
+        fig_fo.add_trace(go.Bar(
+            name=name,
+            y=[stat_label],
+            x=[mirror_val],
+            orientation='h',
+            marker=dict(color=colors_fo[i], opacity=0.85),
+            text=f"{val:.1f}",
+            textposition='outside',
+            textfont=dict(color='#EAEAEA', family='Rajdhani', size=12),
+            showlegend=(stat_label == faceoff_stats[0][0]),
+            legendgroup=name,
+            hovertemplate=f'<b>{name}</b><br>{stat_label}: {val:.1f}<extra></extra>'
+        ))
+
+fig_fo.update_layout(
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='#1C1C24',
+    barmode='relative',
+    height=max(280, len(faceoff_stats) * 70),
+    showlegend=True,
+    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
+                font=dict(color='#EAEAEA', family='Rajdhani', size=13), bgcolor='rgba(0,0,0,0)'),
+    margin=dict(l=20, r=20, t=40, b=20),
+    font=dict(color='#888899', family='Inter', size=11),
+    xaxis=dict(showticklabels=False, showgrid=False, zeroline=True,
+               zerolinecolor='#2E2E3A', zerolinewidth=2),
+    yaxis=dict(gridcolor='#2E2E3A', color='#EAEAEA',
+               tickfont=dict(color='#EAEAEA', family='Rajdhani', size=13))
+)
+st.plotly_chart(fig_fo, use_container_width=True)
 
 # ── SECTION 4: Gauge indicators ──
 st.markdown('<div class="section-title">PERFORMANCE GAUGES</div>', unsafe_allow_html=True)

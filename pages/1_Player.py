@@ -10,6 +10,7 @@ from utils.styles import GLOBAL_CSS, PLOTLY_THEME, AXIS_STYLE, render_nav, rende
 
 st.set_page_config(page_title="Player Intelligence", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+st.markdown('<style>:root{--page-accent:#00D4FF;}</style>', unsafe_allow_html=True)
 render_nav(active_page='/Player')
 
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
@@ -163,6 +164,85 @@ with cols[1]:
     )
     st.plotly_chart(fig_radar, use_container_width=True)
     
+    st.markdown('<div class="section-title">🎯 AGENT DNA</div>', unsafe_allow_html=True)
+    if not stats_df.empty and 'agent' in stats_df.columns:
+        agent_counts = stats_df[stats_df['agent'].notna()].groupby('agent').agg(
+            matches=('agent','count'),
+            avg_acs=('acs','mean')
+        ).reset_index().sort_values('matches', ascending=False).head(8)
+
+        if not agent_counts.empty:
+            AGENT_ROLES = {
+                'Jett':'Duelist','Reyna':'Duelist','Raze':'Duelist',
+                'Neon':'Duelist','Yoru':'Duelist','Phoenix':'Duelist','ISO':'Duelist',
+                'Omen':'Controller','Brimstone':'Controller','Viper':'Controller',
+                'Astra':'Controller','Harbor':'Controller','Clove':'Controller',
+                'Sage':'Sentinel','Cypher':'Sentinel','Killjoy':'Sentinel',
+                'Chamber':'Sentinel','Deadlock':'Sentinel','Vyse':'Sentinel',
+                'Sova':'Initiator','Breach':'Initiator','Skye':'Initiator',
+                'KAY/O':'Initiator','Fade':'Initiator','Gekko':'Initiator','Tejo':'Initiator',
+            }
+            ROLE_COLORS = {
+                'Duelist':'#FF4757',
+                'Controller':'#7F77DD',
+                'Sentinel':'#00D4FF',
+                'Initiator':'#F5C518',
+            }
+            agent_counts['role'] = agent_counts['agent'].map(AGENT_ROLES).fillna('Unknown')
+            agent_counts['color'] = agent_counts['role'].map(ROLE_COLORS).fillna('#888899')
+            agent_counts['avg_acs'] = agent_counts['avg_acs'].round(1)
+
+            dna_cols = st.columns([1, 1])
+            with dna_cols[0]:
+                fig_donut = go.Figure(go.Pie(
+                    labels=agent_counts['agent'],
+                    values=agent_counts['matches'],
+                    hole=0.62,
+                    marker=dict(
+                        colors=agent_counts['color'].tolist(),
+                        line=dict(color='#1C1C24', width=2)
+                    ),
+                    textinfo='label+percent',
+                    textfont=dict(color='#EAEAEA', family='Rajdhani', size=12),
+                    hovertemplate='<b>%{label}</b><br>Matches: %{value}<br>Share: %{percent}<extra></extra>',
+                    rotation=90,
+                    direction='clockwise',
+                ))
+                fig_donut.add_annotation(
+                    text=f"<b style='font-size:20px'>{agent_counts.iloc[0]['agent']}</b><br><span style='font-size:11px;color:#888899'>MAIN</span>",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(color='#EAEAEA', family='Rajdhani', size=14)
+                )
+                fig_donut.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    showlegend=False,
+                    height=320,
+                    margin=dict(l=10, r=10, t=20, b=20),
+                    font=dict(color='#888899', family='Inter', size=11)
+                )
+                st.plotly_chart(fig_donut, use_container_width=True)
+
+            with dna_cols[1]:
+                st.markdown('<div style="margin-top:16px;">', unsafe_allow_html=True)
+                for _, ag in agent_counts.iterrows():
+                    role = ag['role']
+                    color = ag['color']
+                    bar_pct = int(ag['matches'] / agent_counts['matches'].sum() * 100)
+                    st.markdown(f"""
+<div style="margin-bottom:12px;">
+  <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
+    <span style="font-family:Rajdhani,sans-serif; font-size:14px; font-weight:600; color:#EAEAEA;">{ag['agent']}</span>
+    <span style="font-size:11px; color:{color}; font-weight:600;">{role} · {int(ag['matches'])}M · {ag['avg_acs']:.0f} ACS</span>
+  </div>
+  <div style="background:#1C1C24; border-radius:3px; height:6px; overflow:hidden;">
+    <div style="width:{bar_pct}%; height:6px; background:{color}; border-radius:3px; transition:width 0.8s ease;"></div>
+  </div>
+</div>""", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("No agent data available for this player.")
+
     st.markdown('<div class="section-title">ANALYST INSIGHTS</div>', unsafe_allow_html=True)
 
     gauge_cols = st.columns(3)
