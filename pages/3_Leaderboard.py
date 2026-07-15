@@ -299,18 +299,25 @@ total = len(lb_df)
 # ── SECTION 3: PODIUM ──
 if total >= 1:
     st.markdown('<div class="section-title">🏆 TOP PERFORMERS</div>', unsafe_allow_html=True)
-    podium_medals = ['🥇', '🥈', '🥉']
-    podium_colors = ['#FFD700', '#C0C0C0', '#CD7F32']
+    podium_medals = ['🥇','🥈','🥉']
+    podium_classes = ['p1','p2','p3']
     podium_count = min(3, total)
-    pod_cols = st.columns(podium_count)
+    pod_html = '<div style="display:grid; grid-template-columns:repeat(' + str(podium_count) + ',1fr); gap:16px; margin-bottom:8px;">'
     for i in range(podium_count):
         row = lb_df.iloc[i]
         tier_label, tier_color = consistency_tier(row['consistency'])
-        with pod_cols[i]:
-            st.metric(podium_medals[i] + " #" + str(i+1), row['name'])
-            st.metric("Avg ACS", f"{float(row['avg_acs']):.1f}")
-            st.metric("Consistency", f"{float(row['consistency']):.1f} · {tier_label}")
-            st.metric("Matches", int(row['matches_played']))
+        pc = podium_classes[i]
+        pod_html += f"""
+        <div class="podium-card {pc}">
+            <div class="podium-medal">{podium_medals[i]}</div>
+            <div class="podium-name">{row['name']}</div>
+            <div style="font-size:11px; color:#555566; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;">{row['region'] if row['region'] != '—' else 'Unknown Region'}</div>
+            <div class="podium-acs {pc}">{float(row['avg_acs']):.1f}</div>
+            <div class="podium-label">AVG ACS · {int(row['matches_played'])} MATCHES</div>
+            <div class="podium-tier" style="color:{tier_color};">● {tier_label} · {float(row['consistency']):.1f}</div>
+        </div>"""
+    pod_html += '</div>'
+    st.markdown(pod_html, unsafe_allow_html=True)
 
 # ── SECTION 4: PLAYER LOOKUP ──
 st.markdown('<div class="section-title">🔍 PLAYER LOOKUP</div>', unsafe_allow_html=True)
@@ -367,28 +374,77 @@ if total > 0:
     page = st.number_input('Page', 1, max_page, 1)
     start = (page - 1) * per_page
     chunk = lb_df.iloc[start:start + per_page].copy()
-    chunk['rank'] = chunk['rank_display'].apply(lambda r: '🥇' if r==1 else '🥈' if r==2 else '🥉' if r==3 else f"#{int(r)}")
-    chunk['tier'] = chunk['consistency'].apply(lambda c: '🔵 Elite' if float(c)>=70 else '🟡 Solid' if float(c)>=40 else '🔴 Volatile')
-    chunk['region'] = chunk['region'].fillna('—').replace('', '—')
-    acs_max = float(lb_df['avg_acs'].max())
-    acs_min = float(lb_df['avg_acs'].min())
-    display_df = chunk[['rank','name','region','avg_acs','kast_pct','consistency','tier','matches_played']].copy()
-    display_df.columns = ['Rank','Player','Region','ACS','KAST %','Consistency','Tier','Matches']
-    st.dataframe(
-        display_df, use_container_width=True, hide_index=True,
-        column_config={
-            'Rank': st.column_config.TextColumn(width='small'),
-            'Player': st.column_config.TextColumn(width='medium'),
-            'Region': st.column_config.TextColumn(width='small'),
-            'ACS': st.column_config.ProgressColumn('ACS', min_value=acs_min, max_value=acs_max, format='%.1f', width='medium'),
-            'KAST %': st.column_config.NumberColumn(format='%.1f', width='small'),
-            'Consistency': st.column_config.NumberColumn(format='%.1f', width='small'),
-            'Tier': st.column_config.TextColumn(width='small'),
-            'Matches': st.column_config.NumberColumn(format='%d', width='small'),
-        }
-    )
+    acs_max = float(lb_df['avg_acs'].max()) if total > 0 else 300.0
+
+    sb_html = """
+    <div class="sb-header">
+        <div>RANK</div><div>PLAYER</div><div>REGION</div>
+        <div>ACS</div><div>KAST %</div><div>CONSISTENCY</div>
+        <div>TIER</div><div>MATCHES</div>
+    </div>
+    """
+    for _, row in chunk.iterrows():
+        rank = int(row['rank_display'])
+        cons = float(row['consistency'])
+        acs = float(row['avg_acs'])
+        kast = float(row['kast_pct'])
+        region = str(row['region']) if row['region'] != '—' else '—'
+        matches = int(row['matches_played'])
+
+        if rank == 1:
+            row_cls = 'sb-row rank-1'
+            rank_cls = 'sb-rank r1'
+            rank_disp = '🥇'
+        elif rank == 2:
+            row_cls = 'sb-row rank-2'
+            rank_cls = 'sb-rank r2'
+            rank_disp = '🥈'
+        elif rank == 3:
+            row_cls = 'sb-row rank-3'
+            rank_cls = 'sb-rank r3'
+            rank_disp = '🥉'
+        elif rank <= 10:
+            row_cls = 'sb-row top10'
+            rank_cls = 'sb-rank rtop'
+            rank_disp = f'#{rank}'
+        else:
+            row_cls = 'sb-row'
+            rank_cls = 'sb-rank'
+            rank_disp = f'#{rank}'
+
+        if cons >= 70:
+            tier_cls = 'sb-tier elite'
+            tier_txt = '● ELITE'
+        elif cons >= 40:
+            tier_cls = 'sb-tier solid'
+            tier_txt = '● SOLID'
+        else:
+            tier_cls = 'sb-tier volatile'
+            tier_txt = '● VOLATILE'
+
+        acs_bar_pct = int(acs / acs_max * 100) if acs_max > 0 else 0
+
+        sb_html += f"""
+        <div class="{row_cls}">
+            <div class="{rank_cls}">{rank_disp}</div>
+            <div class="sb-name">{row['name']}</div>
+            <div class="sb-region">{region}</div>
+            <div class="sb-acs">
+                <span class="sb-acs-val">{acs:.0f}</span>
+                <div class="sb-acs-bar-track">
+                    <div class="sb-acs-bar-fill" style="width:{acs_bar_pct}%;"></div>
+                </div>
+            </div>
+            <div class="sb-stat">{kast:.1f}%</div>
+            <div class="sb-stat">{cons:.1f}</div>
+            <div><span class="{tier_cls}">{tier_txt}</span></div>
+            <div class="sb-matches">{matches}</div>
+        </div>
+        """
+
+    st.markdown(sb_html, unsafe_allow_html=True)
 else:
-    st.warning(f"No players match current filters. Try selecting 'All' tiers or reducing the minimum matches.")
+    st.warning("No players match current filters. Try selecting 'All' tiers or reducing the minimum matches.")
 
 st.markdown('</div>', unsafe_allow_html=True)
 render_glossary()

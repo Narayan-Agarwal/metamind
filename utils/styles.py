@@ -2,14 +2,25 @@ import streamlit as st
 
 GLOBAL_CSS = """
 <style>
-:root { --page-accent: #F5C518; }
+:root {
+  --page-accent: #FF4040;
+  --accent-gold: #F5C518;
+  --accent-crimson: #FF4040;
+  --accent-cyan: #00D4FF;
+  --bg-dark: #1C1C24;
+  --bg-card: #252530;
+  --bg-deeper: #14141C;
+  --border: #2E2E3A;
+  --text-primary: #EAEAEA;
+  --text-secondary: #888899;
+}
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 * {box-sizing:border-box;}
 .stApp {
   background:#1C1C24 !important;
   font-family:'Inter',sans-serif;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zm0 34L0 84V50l28 16 28-16v34L28 100z' fill='none' stroke='%232E2E3A' stroke-width='0.4' opacity='0.35'/%3E%3C/svg%3E") !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zm0 34L0 84V50l28 16 28-16v34L28 100z' fill='none' stroke='%23FF4040' stroke-width='0.3' opacity='0.07'/%3E%3C/svg%3E") !important;
   background-size: 56px 100px !important;
 }
 [data-testid="stSidebar"] {display:none !important;}
@@ -25,11 +36,12 @@ GLOBAL_CSS = """
 /* ── TOP BAR ── */
 .topbar {
   position:sticky; top:0; z-index:1000;
-  background:#14141C;
-  border-bottom:1px solid #2E2E3A;
+  background:#0F0F18;
+  border-bottom:2px solid #FF4040;
   display:flex; align-items:center;
   justify-content:space-between;
   padding:0 28px; height:52px;
+  box-shadow: 0 2px 24px rgba(255,64,64,0.12);
 }
 .topbar-logo {
   font-family:'Rajdhani',sans-serif;
@@ -37,7 +49,7 @@ GLOBAL_CSS = """
   letter-spacing:2px; color:#EAEAEA;
 }
 .topbar-logo em {
-  color:#F5C518; font-style:normal;
+  color:#FF4040; font-style:normal;
 }
 .topbar-nav {
   display:flex; gap:4px;
@@ -48,12 +60,16 @@ GLOBAL_CSS = """
   color:#888899; text-decoration:none;
   padding:6px 16px; border-radius:6px;
   transition:all 0.15s;
+  border-bottom: 2px solid transparent;
 }
 .topbar-nav a:hover {
-  color:#EAEAEA; background:#252530;
+  color:#EAEAEA;
+  border-bottom: 2px solid rgba(255,64,64,0.4);
 }
 .topbar-nav a.active {
-  color:#F5C518; background:#252530;
+  color:#FF4040;
+  border-bottom: 2px solid #FF4040;
+  background: rgba(255,64,64,0.06);
 }
 
 /* ── LEFT ICON RAIL ── */
@@ -98,7 +114,7 @@ GLOBAL_CSS = """
   content:'';
   position:absolute; top:0; left:0;
   right:0; height:3px;
-  background:#F5C518;
+  background:#FF4040;
 }
 .stat-card.teal::before {background:#00D4FF;}
 .stat-card.red::before {background:#FF4757;}
@@ -127,11 +143,11 @@ GLOBAL_CSS = """
 .section-title {
   font-family:'Rajdhani',sans-serif;
   font-size:18px; font-weight:700;
-  color:#EAEAEA; letter-spacing:1px;
+  color:#EAEAEA; letter-spacing:2px;
   text-transform:uppercase;
   margin:28px 0 16px;
   padding-left:12px;
-  border-left:3px solid var(--page-accent, #F5C518);
+  border-left:3px solid var(--page-accent, #FF4040);
 }
 
 /* ── INSIGHT CARDS ── */
@@ -307,8 +323,7 @@ GLOBAL_CSS = """
 }
 .pct-bar-fill {
   height:100%; border-radius:3px;
-  background:linear-gradient(
-    90deg, #F5C518, #FFD700);
+  background:linear-gradient(90deg, #FF4040, #F5C518);
 }
 
 /* ── HOME HERO ── */
@@ -332,9 +347,10 @@ GLOBAL_CSS = """
   letter-spacing:4px;
 }
 .home-hero-title span {
-  color:#F5C518;
+  color:#FF4040;
   animation:pulse 3s ease infinite;
   display:inline-block;
+  text-shadow: 0 0 40px rgba(255,64,64,0.4);
 }
 .home-hero-sub {
   font-size:16px; color:#888899;
@@ -353,42 +369,28 @@ GLOBAL_CSS = """
 
 /* ── FEATURE CARDS ── */
 .feat-card {
-  background:#252530;
+  background:#1A1A24;
+  border:1px solid #2E2E3A;
+  border-top:3px solid #FF4040;
   border-radius:10px; padding:28px;
   height:100%;
-  transition:box-shadow 0.2s, transform 0.2s;
+  transition:border-color 0.2s, box-shadow 0.2s, transform 0.2s;
   cursor:pointer; text-decoration:none;
   display:block;
   position:relative;
-  border:1px solid transparent;
-  background-clip:padding-box;
+  overflow:hidden;
 }
-.feat-card::before {
+.feat-card::after {
   content:'';
   position:absolute;
-  inset:-1px;
-  border-radius:11px;
-  padding:1px;
-  background:linear-gradient(135deg, #F5C518, #2E2E3A, #00D4FF);
-  -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite:destination-out;
-  mask-composite:exclude;
-  opacity:0.4;
-  transition:opacity 0.2s;
-  animation:borderRotate 4s linear infinite;
-  background-size:300% 300%;
-}
-.feat-card:hover::before {
-  opacity:1;
+  inset:0;
+  background: linear-gradient(135deg, rgba(255,64,64,0.04) 0%, transparent 60%);
+  pointer-events:none;
 }
 .feat-card:hover {
-  box-shadow:0 8px 32px rgba(245,197,24,0.12);
-  transform:translateY(-2px);
-}
-@keyframes borderRotate {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  border-color:#FF4040;
+  box-shadow:0 8px 32px rgba(255,64,64,0.15), 0 0 0 1px rgba(255,64,64,0.2);
+  transform:translateY(-3px);
 }
 .feat-icon {
   font-size:32px; margin-bottom:16px;
@@ -413,7 +415,7 @@ GLOBAL_CSS = """
 .platform-num {
   font-family:'Rajdhani',sans-serif;
   font-size:48px; font-weight:700;
-  color:#F5C518; line-height:1;
+  color:#FF4040; line-height:1;
 }
 .platform-label {
   font-size:11px; color:#888899;
@@ -444,6 +446,159 @@ GLOBAL_CSS = """
   font-size:11px !important;
   letter-spacing:1px !important;
   text-transform:uppercase !important;
+}
+/* ── SCOREBOARD TABLE ── */
+.sb-table {
+  width:100%;
+  border-collapse:collapse;
+  font-family:'Inter',sans-serif;
+}
+.sb-header {
+  display:grid;
+  grid-template-columns: 64px 1fr 100px 140px 90px 100px 80px 70px;
+  padding:10px 16px;
+  background:#0F0F18;
+  border-top:2px solid #FF4040;
+  border-bottom:1px solid #2E2E3A;
+  font-size:10px; font-weight:700;
+  color:#888899; letter-spacing:1.5px;
+  text-transform:uppercase;
+}
+.sb-row {
+  display:grid;
+  grid-template-columns: 64px 1fr 100px 140px 90px 100px 80px 70px;
+  padding:0 16px;
+  height:52px;
+  align-items:center;
+  border-bottom:1px solid rgba(46,46,58,0.6);
+  transition:background 0.12s;
+  position:relative;
+}
+.sb-row:hover {
+  background:rgba(255,64,64,0.04);
+}
+.sb-row.rank-1 {
+  background:rgba(255,215,0,0.04);
+  border-left:3px solid #FFD700;
+}
+.sb-row.rank-2 {
+  background:rgba(192,192,192,0.03);
+  border-left:3px solid #C0C0C0;
+}
+.sb-row.rank-3 {
+  background:rgba(205,127,50,0.03);
+  border-left:3px solid #CD7F32;
+}
+.sb-row.top10 {
+  border-left:3px solid rgba(255,64,64,0.3);
+}
+.sb-rank {
+  font-family:'Rajdhani',sans-serif;
+  font-size:22px; font-weight:700;
+  color:#444455; text-align:center;
+}
+.sb-rank.r1 { color:#FFD700; font-size:26px; }
+.sb-rank.r2 { color:#C0C0C0; font-size:24px; }
+.sb-rank.r3 { color:#CD7F32; font-size:24px; }
+.sb-rank.rtop { color:#FF4040; font-size:18px; }
+.sb-name {
+  font-size:14px; font-weight:600;
+  color:#EAEAEA; letter-spacing:0.3px;
+}
+.sb-region {
+  font-size:11px; color:#555566;
+  text-transform:uppercase; letter-spacing:1px;
+}
+.sb-acs {
+  display:flex; align-items:center; gap:8px;
+}
+.sb-acs-val {
+  font-family:'Rajdhani',sans-serif;
+  font-size:16px; font-weight:700;
+  color:#F5C518; min-width:40px;
+}
+.sb-acs-bar-track {
+  flex:1; height:4px;
+  background:#2E2E3A; border-radius:2px;
+  overflow:hidden;
+}
+.sb-acs-bar-fill {
+  height:4px; border-radius:2px;
+  background:linear-gradient(90deg,#FF4040,#F5C518);
+}
+.sb-stat {
+  font-family:'JetBrains Mono',monospace;
+  font-size:13px; color:#AAAABC;
+  text-align:right;
+}
+.sb-tier {
+  font-size:11px; font-weight:600;
+  letter-spacing:0.5px; text-align:center;
+  padding:3px 8px; border-radius:4px;
+}
+.sb-tier.elite {
+  color:#00D4FF;
+  background:rgba(0,212,255,0.08);
+  border:1px solid rgba(0,212,255,0.2);
+}
+.sb-tier.solid {
+  color:#F5C518;
+  background:rgba(245,197,24,0.08);
+  border:1px solid rgba(245,197,24,0.2);
+}
+.sb-tier.volatile {
+  color:#FF4757;
+  background:rgba(255,71,87,0.08);
+  border:1px solid rgba(255,71,87,0.2);
+}
+.sb-matches {
+  font-size:12px; color:#555566;
+  text-align:right;
+}
+
+/* ── PODIUM CARDS ── */
+.podium-card {
+  background:#1A1A24;
+  border:1px solid #2E2E3A;
+  border-radius:10px;
+  padding:20px;
+  text-align:center;
+  position:relative;
+  overflow:hidden;
+}
+.podium-card.p1 {
+  border-top:3px solid #FFD700;
+  box-shadow:0 0 30px rgba(255,215,0,0.08);
+}
+.podium-card.p2 {
+  border-top:3px solid #C0C0C0;
+}
+.podium-card.p3 {
+  border-top:3px solid #CD7F32;
+}
+.podium-medal {
+  font-size:28px; margin-bottom:6px;
+}
+.podium-name {
+  font-family:'Rajdhani',sans-serif;
+  font-size:20px; font-weight:700;
+  color:#EAEAEA; margin-bottom:4px;
+}
+.podium-acs {
+  font-family:'Rajdhani',sans-serif;
+  font-size:36px; font-weight:700;
+  line-height:1;
+}
+.podium-acs.p1 { color:#FFD700; text-shadow:0 0 20px rgba(255,215,0,0.3); }
+.podium-acs.p2 { color:#C0C0C0; }
+.podium-acs.p3 { color:#CD7F32; }
+.podium-label {
+  font-size:10px; color:#555566;
+  letter-spacing:2px; text-transform:uppercase;
+  margin-top:2px;
+}
+.podium-tier {
+  font-size:11px; margin-top:8px; font-weight:600;
 }
 </style>
 """
@@ -572,7 +727,7 @@ HOME_HERO_HTML = """
 <canvas id="c"></canvas>
 <div class="content">
   <h1><span>META</span>MIND</h1>
-  <p>VALORANT PRO ANALYTICS PLATFORM</p>
+  <p>VALORANT PRO ANALYTICS · 916 PLAYERS · INDIA SPOTLIGHT · LIVE RANKINGS</p>
 </div>
 <script>
 const canvas = document.getElementById('c');
@@ -603,7 +758,7 @@ function draw(){
         ctx.beginPath();
         ctx.moveTo(p.x,p.y);
         ctx.lineTo(q.x,q.y);
-        ctx.strokeStyle = `rgba(245,197,24,${0.08*(1-d/120)})`;
+        ctx.strokeStyle = `rgba(255,64,64,${0.1*(1-d/120)})`;
         ctx.lineWidth=0.5;
         ctx.stroke();
       }
@@ -612,7 +767,7 @@ function draw(){
     // Draw particle
     ctx.beginPath();
     ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-    ctx.fillStyle=`rgba(245,197,24,${p.o})`;
+    ctx.fillStyle=`rgba(255,${Math.floor(64+p.o*40)},${Math.floor(p.o*20)},${p.o})`;
     ctx.fill();
     
     p.x+=p.dx; p.y+=p.dy;

@@ -61,18 +61,32 @@ for col,(href,icon,title,desc) in zip([f1,f2,f3], features):
     </a>""", unsafe_allow_html=True)
 
 # Top 5 strip
-st.markdown('<div class="section-title">TOP PERFORMERS</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">🏆 TOP PERFORMERS</div>', unsafe_allow_html=True)
 top5 = get_leaderboard(engine, min_matches=10).head(5)
-cols = st.columns(5)
-for col, (_, row) in zip(cols, top5.iterrows()):
-    col.markdown(f"""
-    <div class="stat-card teal">
-      <div class="stat-label">RANK #{int(row['rank'])}</div>
-      <div class="stat-value" style="font-size:22px">
-        {row['name']}</div>
-      <div class="stat-delta up">
-        ACS {row['avg_acs']}</div>
-    </div>""", unsafe_allow_html=True)
+medals = ['🥇','🥈','🥉','#4','#5']
+medal_colors = ['#FFD700','#C0C0C0','#CD7F32','#FF4040','#FF4040']
+acs_max_home = float(top5['avg_acs'].max()) if not top5.empty else 300
+strip_html = '<div style="display:flex; gap:12px;">'
+for i, (_, row) in enumerate(top5.iterrows()):
+    acs_pct = int(float(row['avg_acs']) / acs_max_home * 100)
+    c = medal_colors[i]
+    strip_html += f"""
+    <div style="flex:1; background:#1A1A24; border:1px solid #2E2E3A; border-top:3px solid {c};
+        border-radius:8px; padding:16px 14px; position:relative; overflow:hidden;">
+      <div style="position:absolute; bottom:0; left:0; height:3px; width:{acs_pct}%;
+          background:linear-gradient(90deg,#FF4040,#F5C518); opacity:0.5;"></div>
+      <div style="font-family:Rajdhani,sans-serif; font-size:13px; color:{c};
+          font-weight:700; letter-spacing:1px; margin-bottom:4px;">{medals[i]} RANK {i+1}</div>
+      <div style="font-family:Rajdhani,sans-serif; font-size:18px; font-weight:700;
+          color:#EAEAEA; margin-bottom:6px; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis;">{row['name']}</div>
+      <div style="font-family:Rajdhani,sans-serif; font-size:28px; font-weight:700;
+          color:{c}; line-height:1;">{float(row['avg_acs']):.0f}</div>
+      <div style="font-size:10px; color:#555566; letter-spacing:1.5px;
+          text-transform:uppercase; margin-top:2px;">AVG ACS</div>
+    </div>"""
+strip_html += '</div>'
+st.markdown(strip_html, unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 render_glossary()
