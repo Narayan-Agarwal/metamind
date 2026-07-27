@@ -202,7 +202,7 @@ for i, (name, pct) in enumerate(pct_data.items()):
             mode="gauge+number+delta",
             value=acs_rank,
             delta=dict(reference=50, increasing=dict(color=c), decreasing=dict(color='#FF4757')),
-            number=dict(suffix="th Pct", font=dict(color=c, size=26, family='Rajdhani')),
+            number=dict(suffix="th Pct", font=dict(color=c, size=22, family='Rajdhani'), valueformat=".1f"),
             title=dict(text=f"{name}<br><span style='font-size:12px;color:#888899'>ACS Percentile Rank</span>", font=dict(color='#EAEAEA', size=14, family='Rajdhani')),
             gauge=dict(
                 axis=dict(range=[0,100], tickcolor='#2E2E3A', tickfont=dict(color='#888899', size=9)),
@@ -214,11 +214,12 @@ for i, (name, pct) in enumerate(pct_data.items()):
                     dict(range=[66,100], color='#2E2E3A'),
                 ],
                 threshold=dict(line=dict(color=c, width=3), thickness=0.85, value=acs_rank)
-            )
+            ),
+            domain=dict(x=[0,1], y=[0.1, 1])
         ))
         fig_g.update_layout(
             paper_bgcolor='rgba(0,0,0,0)',
-            height=260, margin=dict(l=20,r=20,t=50,b=10),
+            height=300, margin=dict(l=10,r=10,t=40,b=20),
             font=dict(color='#888899')
         )
         st.plotly_chart(fig_g, use_container_width=True)

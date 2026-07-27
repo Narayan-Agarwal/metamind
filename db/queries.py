@@ -123,28 +123,21 @@ def get_regional_comparison(engine):
         ORDER BY avg_acs DESC
     """, engine)
 
-def get_indian_spotlight(engine):
-    known_indian = ['Excali','Rawfiul','Antidote',
-        'Venka','Vibhor','mw1','Deathmaker','hellff',
-        'Rite2Ace','Amaterasu','Marzil','Techno',
-        'Lightningfast','Karam1L','Rishi','Saarang']
-    placeholders = ','.join([f"'{n}'" for n in known_indian])
-    return pd.read_sql(f"""
+def get_south_asia_spotlight(engine):
+    return pd.read_sql("""
         SELECT
             name,
-            ROUND(COALESCE(avg_acs,0)::numeric,1)             AS avg_acs,
-            ROUND(COALESCE(avg_kd,0)::numeric,2)              AS avg_kd,
-            ROUND(COALESCE(consistency_score,0)::numeric,1)   AS consistency,
+            ROUND(COALESCE(avg_acs,0)::numeric,1)              AS avg_acs,
+            ROUND(COALESCE(consistency_score,0)::numeric,1)    AS consistency,
             ROUND((COALESCE(acs_percentile,0)*100)::numeric,0) AS global_percentile,
-            COALESCE(matches_played,0)                         AS matches_played,
-            ROUND(COALESCE(avg_kast,0)::numeric,1)            AS avg_kast,
-            ROUND(COALESCE(avg_fb,0)*100::numeric,1)          AS avg_fb_pct,
-            ROUND(COALESCE(avg_hs,0)*100::numeric,1)          AS avg_hs_pct,
-            ROUND(COALESCE(avg_adr,0)::numeric,1)             AS avg_adr
+            COALESCE(matches_played,0)                          AS matches_played,
+            ROUND(COALESCE(avg_kast,0)::numeric,1)             AS avg_kast
         FROM mv_player_percentiles
-        WHERE name IN ({placeholders})
+        WHERE region = 'South Asia'
+          AND avg_acs IS NOT NULL
+          AND matches_played >= 5
         ORDER BY avg_acs DESC
-        LIMIT 5
+        LIMIT 6
     """, engine)
 
 def get_top_players(engine, limit=15):

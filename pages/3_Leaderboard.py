@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 from db.connection import get_engine
-from db.queries import get_leaderboard, get_indian_spotlight, get_acs_distribution
+from db.queries import get_leaderboard, get_south_asia_spotlight, get_acs_distribution
 from utils.styles import GLOBAL_CSS, AXIS_STYLE, render_nav, render_glossary
 
 st.set_page_config(page_title="Global Leaderboard", layout="wide", initial_sidebar_state="collapsed")
@@ -24,168 +24,41 @@ def consistency_tier(score):
 import streamlit.components.v1 as components
 
 try:
-    indian = get_indian_spotlight(engine)
-    if not indian.empty:
-        st.markdown('<div class="section-title">🇮🇳 INDIA SPOTLIGHT</div>', unsafe_allow_html=True)
-        st.caption("Top Indian VCT players in the global dataset — ranked by ACS.")
-
-        def tier_info(cons):
-            c = float(cons)
-            if c >= 70: return 'ELITE', '#00D4FF', 'rgba(0,212,255,0.08)'
-            elif c >= 40: return 'SOLID', '#F5C518', 'rgba(245,197,24,0.08)'
-            else: return 'VOLATILE', '#FF4757', 'rgba(255,71,87,0.08)'
-
-        def make_stat_bar(label, value, max_val, color, delay):
-            pct = min(100, round(float(value) / max_val * 100, 1))
-            return f"""
-            <div style="margin-bottom:10px;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
-                    <span style="font-size:10px; color:#888899; font-family:Inter,sans-serif; letter-spacing:1px; text-transform:uppercase;">{label}</span>
-                    <span style="font-size:11px; color:#EAEAEA; font-family:Rajdhani,sans-serif; font-weight:600;">{float(value):.1f}</span>
-                </div>
-                <div style="background:#1C1C24; border-radius:3px; height:5px; overflow:hidden;">
-                    <div style="height:5px; background:{color}; border-radius:3px; width:0%;
-                        animation: fillBar{delay} 1.2s ease-out {delay*0.15:.1f}s forwards;">
-                    </div>
-                </div>
-            </div>
-            <style>
-            @keyframes fillBar{delay} {{
-                from {{ width: 0%; }}
-                to {{ width: {pct}%; }}
-            }}
-            </style>
-            """
-
-        def make_radar_svg(vals, color):
-            import math
-            n = len(vals)
-            cx, cy, r = 60, 60, 45
-            points = []
-            for i, v in enumerate(vals):
-                angle = math.pi * 2 * i / n - math.pi / 2
-                rv = r * (float(v) / 100)
-                x = cx + rv * math.cos(angle)
-                y = cy + rv * math.sin(angle)
-                points.append((x, y))
-            grid_points = []
-            for i in range(n):
-                angle = math.pi * 2 * i / n - math.pi / 2
-                x = cx + r * math.cos(angle)
-                y = cy + r * math.sin(angle)
-                grid_points.append(f"{x:.1f},{y:.1f}")
-            polygon_pts = ' '.join([f"{x:.1f},{y:.1f}" for x,y in points])
-            grid_poly = ' '.join(grid_points)
-            r,g,b = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
-            return f"""
-            <svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-                <polygon points="{grid_poly}" fill="none" stroke="#2E2E3A" stroke-width="1"/>
-                <polygon points="{polygon_pts}" fill="rgba({r},{g},{b},0.2)" stroke="{color}" stroke-width="1.5"
-                    style="animation: radarPulse 2s ease-in-out infinite alternate;">
-                </polygon>
-                <style>
-                @keyframes radarPulse {{
-                    from {{ opacity: 0.7; }}
-                    to {{ opacity: 1; }}
-                }}
-                </style>
-            </svg>
-            """
-
-        cards_html = """
-        <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
-        <div style="display:flex; gap:16px; flex-wrap:wrap; padding:8px 0 16px 0;">
-        """
-
-        for rank_i, (_, r) in enumerate(indian.iterrows()):
-            tier_label, tier_color, tier_bg = tier_info(r['consistency'])
-            gp = int(float(r['global_percentile']))
-            top_pct = max(1, 100 - gp)
-
-            radar_vals = [
-                min(float(r['avg_acs']) / 300 * 100, 100),
-                float(r['avg_kast']),
-                float(r['consistency']),
-                float(r['avg_hs_pct']),
-                min(float(r['avg_fb_pct']), 100),
-            ]
-            radar_svg = make_radar_svg(radar_vals, tier_color)
-
-            stat_bars = (
-                make_stat_bar('ACS', r['avg_acs'], 300, tier_color, rank_i*5+1) +
-                make_stat_bar('KAST %', r['avg_kast'], 100, tier_color, rank_i*5+2) +
-                make_stat_bar('HS %', r['avg_hs_pct'], 50, tier_color, rank_i*5+3) +
-                make_stat_bar('FIRST KILL %', r['avg_fb_pct'], 30, tier_color, rank_i*5+4)
-            )
-
-            rank_badge = ['🥇','🥈','🥉','④','⑤'][rank_i]
-
-            r_hex = int(tier_color[1:3],16)
-            g_hex = int(tier_color[3:5],16)
-            b_hex = int(tier_color[5:7],16)
-
-            cards_html += f"""
-            <div style="
-                flex: 1; min-width: 200px; max-width: 240px;
-                background: #1A1A24;
-                border: 1px solid rgba({r_hex},{g_hex},{b_hex},0.3);
-                border-top: 3px solid {tier_color};
-                border-radius: 12px;
-                padding: 18px 16px;
-                position: relative;
-                overflow: hidden;
-                animation: cardIn 0.5s ease-out {rank_i*0.1:.1f}s both;
-                box-shadow: 0 0 20px rgba({r_hex},{g_hex},{b_hex},0.08);
-            ">
-                <style>
-                @keyframes cardIn {{
-                    from {{ opacity:0; transform: translateY(16px); }}
-                    to {{ opacity:1; transform: translateY(0); }}
-                }}
-                </style>
-
-                <div style="position:absolute; top:0; left:0; right:0; bottom:0;
-                    background: radial-gradient(ellipse at top left, rgba({r_hex},{g_hex},{b_hex},0.06) 0%, transparent 60%);
-                    pointer-events:none;">
-                </div>
-
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
-                    <div>
-                        <div style="font-size:11px; color:{tier_color}; font-family:Rajdhani,sans-serif;
-                            font-weight:700; letter-spacing:2px; margin-bottom:2px;">
-                            {rank_badge} {tier_label}
-                        </div>
-                        <div style="font-family:Rajdhani,sans-serif; font-size:22px; font-weight:700;
-                            color:#EAEAEA; line-height:1.1;
-                            text-shadow: 0 0 12px rgba({r_hex},{g_hex},{b_hex},0.5);">
-                            {r['name']}
-                        </div>
-                        <div style="font-size:11px; color:#888899; margin-top:2px;">
-                            🇮🇳 Top {top_pct}% globally
-                        </div>
-                    </div>
-                    <div style="opacity:0.9;">{radar_svg}</div>
-                </div>
-
-                <div style="background:rgba({r_hex},{g_hex},{b_hex},0.08); border-radius:6px; padding:8px 10px; margin-bottom:12px; text-align:center;">
-                    <div style="font-family:Rajdhani,sans-serif; font-size:32px; font-weight:700; color:{tier_color};
-                        line-height:1; text-shadow: 0 0 16px rgba({r_hex},{g_hex},{b_hex},0.6);">
-                        {float(r['avg_acs']):.0f}
-                    </div>
-                    <div style="font-size:10px; color:#888899; letter-spacing:1.5px; text-transform:uppercase; margin-top:2px;">
-                        Avg ACS · {int(r['matches_played'])} matches
-                    </div>
-                </div>
-
-                {stat_bars}
-
-            </div>
-            """
-
-        cards_html += "</div>"
-        components.html(cards_html, height=420, scrolling=False)
-except Exception as e:
-    st.info(f"India Spotlight temporarily unavailable.")
+    sa_df = get_south_asia_spotlight(engine)
+    if not sa_df.empty:
+        st.markdown('<div class="section-title">🌏 SOUTH ASIA SPOTLIGHT</div>', unsafe_allow_html=True)
+        st.caption(f"Top {len(sa_df)} South Asian VCT pros by ACS — players with 5+ tracked matches.")
+        sa_cols = st.columns(len(sa_df))
+        for i, (_, r) in enumerate(sa_df.iterrows()):
+            cons = float(r['consistency'])
+            if cons >= 70:
+                tier_label, tier_color = 'Elite', '#00D4FF'
+            elif cons >= 40:
+                tier_label, tier_color = 'Solid', '#F5C518'
+            else:
+                tier_label, tier_color = 'Volatile', '#FF4757'
+            top_pct = max(1, 100 - int(float(r['global_percentile'])))
+            with sa_cols[i]:
+                st.markdown(f"""
+<div style="background:#1A1A24; border:1px solid {tier_color}33;
+    border-top:3px solid {tier_color}; border-radius:10px;
+    padding:16px 14px; text-align:center;">
+  <div style="font-family:Rajdhani,sans-serif; font-size:18px; font-weight:700;
+      color:#EAEAEA; margin-bottom:2px;
+      text-shadow:0 0 12px {tier_color}44;">{r['name']}</div>
+  <div style="font-size:11px; color:{tier_color}; font-weight:600;
+      letter-spacing:1px; margin-bottom:10px;">● {tier_label}</div>
+  <div style="font-family:Rajdhani,sans-serif; font-size:32px; font-weight:700;
+      color:{tier_color}; line-height:1;">{float(r['avg_acs']):.0f}</div>
+  <div style="font-size:10px; color:#555566; letter-spacing:1.5px;
+      text-transform:uppercase; margin-bottom:8px;">AVG ACS</div>
+  <div style="font-size:12px; color:#888899;">
+      KAST {float(r['avg_kast']):.1f}% · {int(r['matches_played'])}M</div>
+  <div style="font-size:11px; color:#555566; margin-top:4px;">
+      🌏 Top {top_pct}% globally</div>
+</div>""", unsafe_allow_html=True)
+except Exception:
+    pass
 
 st.divider()
 
@@ -442,7 +315,57 @@ if total > 0:
         </div>
         """
 
-    st.markdown(sb_html, unsafe_allow_html=True)
+    # Wrap with full HTML doc so CSS classes and inline styles both render
+    full_sb_html = f"""
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+    body {{ margin:0; background:transparent; }}
+    .sb-header {{
+      display:grid;
+      grid-template-columns: 64px 1fr 100px 140px 90px 100px 80px 70px;
+      padding:10px 16px;
+      background:#0F0F18;
+      border-top:2px solid #FF4040;
+      border-bottom:1px solid #2E2E3A;
+      font-size:10px; font-weight:700;
+      color:#888899; letter-spacing:1.5px;
+      text-transform:uppercase;
+      font-family:'Inter',sans-serif;
+    }}
+    .sb-row {{
+      display:grid;
+      grid-template-columns: 64px 1fr 100px 140px 90px 100px 80px 70px;
+      padding:0 16px; height:52px;
+      align-items:center;
+      border-bottom:1px solid rgba(46,46,58,0.6);
+      transition:background 0.12s;
+    }}
+    .sb-row:hover {{ background:rgba(255,64,64,0.04); }}
+    .sb-row.rank-1 {{ background:rgba(255,215,0,0.04); border-left:3px solid #FFD700; }}
+    .sb-row.rank-2 {{ background:rgba(192,192,192,0.03); border-left:3px solid #C0C0C0; }}
+    .sb-row.rank-3 {{ background:rgba(205,127,50,0.03); border-left:3px solid #CD7F32; }}
+    .sb-row.top10 {{ border-left:3px solid rgba(255,64,64,0.3); }}
+    .sb-rank {{ font-family:'Rajdhani',sans-serif; font-size:22px; font-weight:700; color:#444455; text-align:center; }}
+    .sb-rank.r1 {{ color:#FFD700; font-size:26px; }}
+    .sb-rank.r2 {{ color:#C0C0C0; font-size:24px; }}
+    .sb-rank.r3 {{ color:#CD7F32; font-size:24px; }}
+    .sb-rank.rtop {{ color:#FF4040; font-size:18px; }}
+    .sb-name {{ font-size:14px; font-weight:600; color:#EAEAEA; letter-spacing:0.3px; font-family:'Inter',sans-serif; }}
+    .sb-region {{ font-size:11px; color:#555566; text-transform:uppercase; letter-spacing:1px; font-family:'Inter',sans-serif; }}
+    .sb-acs {{ display:flex; align-items:center; gap:8px; }}
+    .sb-acs-val {{ font-family:'Rajdhani',sans-serif; font-size:16px; font-weight:700; color:#F5C518; min-width:40px; }}
+    .sb-acs-bar-track {{ flex:1; height:4px; background:#2E2E3A; border-radius:2px; overflow:hidden; }}
+    .sb-acs-bar-fill {{ height:4px; border-radius:2px; background:linear-gradient(90deg,#FF4040,#F5C518); }}
+    .sb-stat {{ font-family:'JetBrains Mono',monospace; font-size:13px; color:#AAAABC; text-align:right; }}
+    .sb-tier {{ font-size:11px; font-weight:600; letter-spacing:0.5px; text-align:center; padding:3px 8px; border-radius:4px; }}
+    .sb-tier.elite {{ color:#00D4FF; background:rgba(0,212,255,0.08); border:1px solid rgba(0,212,255,0.2); }}
+    .sb-tier.solid {{ color:#F5C518; background:rgba(245,197,24,0.08); border:1px solid rgba(245,197,24,0.2); }}
+    .sb-tier.volatile {{ color:#FF4757; background:rgba(255,71,87,0.08); border:1px solid rgba(255,71,87,0.2); }}
+    .sb-matches {{ font-size:12px; color:#555566; text-align:right; font-family:'Inter',sans-serif; }}
+    </style>
+    {sb_html}
+    """
+    components.html(full_sb_html, height=min(52 * len(chunk) + 60, 1400), scrolling=True)
 else:
     st.warning("No players match current filters. Try selecting 'All' tiers or reducing the minimum matches.")
 

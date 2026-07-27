@@ -173,14 +173,14 @@ with cols[1]:
 
         if not agent_counts.empty:
             AGENT_ROLES = {
-                'Jett':'Duelist','Reyna':'Duelist','Raze':'Duelist',
-                'Neon':'Duelist','Yoru':'Duelist','Phoenix':'Duelist','ISO':'Duelist',
-                'Omen':'Controller','Brimstone':'Controller','Viper':'Controller',
-                'Astra':'Controller','Harbor':'Controller','Clove':'Controller',
-                'Sage':'Sentinel','Cypher':'Sentinel','Killjoy':'Sentinel',
-                'Chamber':'Sentinel','Deadlock':'Sentinel','Vyse':'Sentinel',
-                'Sova':'Initiator','Breach':'Initiator','Skye':'Initiator',
-                'KAY/O':'Initiator','Fade':'Initiator','Gekko':'Initiator','Tejo':'Initiator',
+                'jett':'Duelist','reyna':'Duelist','raze':'Duelist',
+                'neon':'Duelist','yoru':'Duelist','phoenix':'Duelist','iso':'Duelist',
+                'omen':'Controller','brimstone':'Controller','viper':'Controller',
+                'astra':'Controller','harbor':'Controller','clove':'Controller',
+                'sage':'Sentinel','cypher':'Sentinel','killjoy':'Sentinel',
+                'chamber':'Sentinel','deadlock':'Sentinel','vyse':'Sentinel',
+                'sova':'Initiator','breach':'Initiator','skye':'Initiator',
+                'kay/o':'Initiator','fade':'Initiator','gekko':'Initiator','tejo':'Initiator',
             }
             ROLE_COLORS = {
                 'Duelist':'#FF4757',
@@ -188,7 +188,7 @@ with cols[1]:
                 'Sentinel':'#00D4FF',
                 'Initiator':'#F5C518',
             }
-            agent_counts['role'] = agent_counts['agent'].map(AGENT_ROLES).fillna('Unknown')
+            agent_counts['role'] = agent_counts['agent'].str.lower().map(AGENT_ROLES).fillna('Unknown')
             agent_counts['color'] = agent_counts['role'].map(ROLE_COLORS).fillna('#888899')
             agent_counts['avg_acs'] = agent_counts['avg_acs'].round(1)
 

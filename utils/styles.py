@@ -36,12 +36,12 @@ GLOBAL_CSS = """
 /* ── TOP BAR ── */
 .topbar {
   position:sticky; top:0; z-index:1000;
-  background:#0F0F18;
+  background:transparent;
   border-bottom:2px solid #FF4040;
   display:flex; align-items:center;
   justify-content:space-between;
   padding:0 28px; height:52px;
-  box-shadow: 0 2px 24px rgba(255,64,64,0.12);
+  box-shadow: none;
 }
 .topbar-logo {
   font-family:'Rajdhani',sans-serif;
@@ -76,8 +76,8 @@ GLOBAL_CSS = """
 .icon-rail {
   position:fixed; left:0; top:52px;
   width:56px; height:calc(100vh - 52px);
-  background:#14141C;
-  border-right:1px solid #2E2E3A;
+  background:transparent;
+  border-right:none;
   display:flex; flex-direction:column;
   align-items:center; padding-top:16px;
   gap:8px; z-index:999;
