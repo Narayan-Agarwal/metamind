@@ -1,20 +1,38 @@
 import pytest
-from sqlalchemy import text
-from db.queries import get_team_map_winrates
+import pandas as pd
+from db.queries import get_all_players, get_leaderboard
 
-def test_get_team_map_winrates(mocker):
-    # Mock engine
+def test_get_all_players_returns_dataframe(mocker):
     mock_engine = mocker.MagicMock()
-    
-    # Mock pandas read_sql
-    import pandas as pd
-    mock_df = pd.DataFrame({"map_name": ["Ascent", "Bind"], "win_pct": [65.5, 45.0]})
+    mock_df = pd.DataFrame({
+        "player_id": [1, 2, 3],
+        "name": ["Excali", "mw1", "Lightningfast"],
+        "region": ["South Asia", "South Asia", "South Asia"],
+        "nationality": ["IN", "IN", "IN"]
+    })
     mocker.patch("db.queries.pd.read_sql", return_value=mock_df)
-    
-    df = get_team_map_winrates(mock_engine, 1)
-    
+    df = get_all_players(mock_engine)
     assert not df.empty
-    assert len(df) == 2
-    assert "map_name" in df.columns
-    assert "win_pct" in df.columns
-    assert df["map_name"].iloc[0] == "Ascent"
+    assert "name" in df.columns
+    assert len(df) == 3
+
+def test_get_leaderboard_returns_dataframe(mocker):
+    mock_engine = mocker.MagicMock()
+    mock_df = pd.DataFrame({
+        "rank": [1, 2],
+        "name": ["qw1", "WARDELL"],
+        "region": [None, None],
+        "nationality": [None, None],
+        "avg_acs": [301.4, 295.9],
+        "avg_kd": [0.0, 0.0],
+        "consistency": [72.4, 72.2],
+        "kast_pct": [76.2, 85.2],
+        "first_kill_pct": [0.0, 0.0],
+        "matches_played": [10, 11]
+    })
+    mocker.patch("db.queries.pd.read_sql", return_value=mock_df)
+    df = get_leaderboard(mock_engine, min_matches=10)
+    assert not df.empty
+    assert "name" in df.columns
+    assert "avg_acs" in df.columns
+    assert float(df["avg_acs"].iloc[0]) == 301.4
