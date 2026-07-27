@@ -1,22 +1,22 @@
 import pytest
-from sqlalchemy import text
-from data.db_loader import get_or_create_team
+from data.db_loader import _safe_int, _safe_float, refresh_views
 
-def test_get_or_create_team_existing(mocker):
-    mock_session = mocker.Mock()
-    # Simulate existing team
-    mock_session.execute.return_value.fetchone.return_value = (1,)
-    
-    team_id = get_or_create_team(mock_session, "Sentinels")
-    assert team_id == 1
+def test_safe_int_with_valid_value():
+    assert _safe_int(42) == 42
+    assert _safe_int("7") == 7
 
-def test_get_or_create_team_new(mocker):
-    mock_session = mocker.Mock()
-    # Simulate not existing, then insertion returning 2
-    mock_session.execute.side_effect = [
-        mocker.Mock(fetchone=lambda: None),
-        mocker.Mock(fetchone=lambda: (2,))
-    ]
-    
-    team_id = get_or_create_team(mock_session, "Paper Rex")
-    assert team_id == 2
+def test_safe_int_with_none():
+    assert _safe_int(None) is None
+
+def test_safe_int_with_invalid():
+    assert _safe_int("abc") is None
+
+def test_safe_float_with_valid_value():
+    assert _safe_float(3.14) == pytest.approx(3.14)
+    assert _safe_float("2.5") == pytest.approx(2.5)
+
+def test_safe_float_with_none():
+    assert _safe_float(None) is None
+
+def test_safe_float_with_invalid():
+    assert _safe_float("xyz") is None

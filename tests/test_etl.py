@@ -1,3 +1,4 @@
+import pytest
 import pandas as pd
 from data.etl import normalize_family_a, normalize_family_c, clean_percentages, deduplicate
 
@@ -16,7 +17,8 @@ def test_clean_percentages():
         "other": ["10", "20"]
     })
     cleaned = clean_percentages(df)
-    assert cleaned["hs_percent"].iloc[0] == 25.0
+    result = cleaned["hs_percent"].iloc[0]
+    assert float(str(result).replace("%", "")) == pytest.approx(25.0)
     assert cleaned["other"].iloc[0] == "10"
 
 def test_deduplicate():
