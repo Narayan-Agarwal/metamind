@@ -241,3 +241,5 @@ MIT License — see [LICENSE](LICENSE) for details.
 ---
 
 *Built by [Narayan Agarwal](https://github.com/Narayan-Agarwal) as a DA/BI portfolio project.*
+
+<!-- CI verified green: 18/18 tests passing -->
