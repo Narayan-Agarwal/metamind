@@ -16,6 +16,10 @@ engine = get_engine()
 def load_players():
     return get_all_players(engine)
 
+@st.cache_data(ttl=3600)
+def load_player_percentiles(player_id):
+    return get_player_percentiles(engine, player_id)
+
 players_df = load_players()
 if players_df.empty:
     st.error("No player data found.")
@@ -43,7 +47,7 @@ if len(selected) < 2:
 pct_data = {}
 for name in selected:
     pid = int(players_df[players_df['name'] == name]['player_id'].iloc[0])
-    pct_df = get_player_percentiles(engine, pid)
+    pct_df = load_player_percentiles(pid)
     if pct_df is not None and not pct_df.empty:
         pct_data[name] = pct_df.iloc[0]
 

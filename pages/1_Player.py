@@ -21,6 +21,14 @@ engine = get_engine()
 def load_players():
     return get_all_players(engine)
 
+@st.cache_data(ttl=3600)
+def load_player_percentiles(player_id):
+    return get_player_percentiles(engine, player_id)
+
+@st.cache_data(ttl=3600)
+def load_player_stats(player_id):
+    return get_player_stats(engine, player_id)
+
 players_df = load_players()
 if players_df.empty:
     st.error("No player data found.")
@@ -39,13 +47,13 @@ selected_id = int(players_df[
     players_df['name'] == selected_name
 ]['player_id'].iloc[0])
 
-pct_df = get_player_percentiles(engine, selected_id)
+pct_df = load_player_percentiles(selected_id)
 if pct_df is None or pct_df.empty:
     st.warning("No percentile data for this player")
     st.stop()
 
 pct = pct_df.iloc[0]
-stats_df = get_player_stats(engine, selected_id)
+stats_df = load_player_stats(selected_id)
 
 form_status = "CONSISTENT"
 badge_class = "badge-consistent"

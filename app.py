@@ -21,6 +21,10 @@ st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
 # Live platform stats
 engine = get_engine()
+
+@st.cache_data(ttl=3600)
+def load_top_performers():
+    return get_leaderboard(engine, min_matches=10).head(5)
 with engine.connect() as conn:
     from sqlalchemy import text
     players = conn.execute(text("SELECT COUNT(*) FROM players")).scalar()
@@ -62,7 +66,7 @@ for col,(href,icon,title,desc) in zip([f1,f2,f3], features):
 
 # Top 5 strip
 st.markdown('<div class="section-title">🏆 TOP PERFORMERS</div>', unsafe_allow_html=True)
-top5 = get_leaderboard(engine, min_matches=10).head(5)
+top5 = load_top_performers()
 medals = ['🥇','🥈','🥉','#4','#5']
 medal_colors = ['#FFD700','#C0C0C0','#CD7F32','#FF4040','#FF4040']
 acs_max_home = float(top5['avg_acs'].max()) if not top5.empty else 300

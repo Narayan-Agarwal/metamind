@@ -15,6 +15,18 @@ st.markdown('<div class="main-content">', unsafe_allow_html=True)
 engine = get_engine()
 AXIS = dict(gridcolor='#2E2E3A', linecolor='#2E2E3A', tickcolor='#888899', showgrid=True)
 
+@st.cache_data(ttl=3600)
+def load_leaderboard(min_matches):
+    return get_leaderboard(engine, min_matches=min_matches)
+
+@st.cache_data(ttl=3600)
+def load_south_asia():
+    return get_south_asia_spotlight(engine)
+
+@st.cache_data(ttl=3600)
+def load_acs_distribution(min_matches):
+    return get_acs_distribution(engine, min_matches=min_matches)
+
 def consistency_tier(score):
     s = float(score)
     if s >= 70: return 'Elite', '#00D4FF'
@@ -24,7 +36,7 @@ def consistency_tier(score):
 import streamlit.components.v1 as components
 
 try:
-    sa_df = get_south_asia_spotlight(engine)
+    sa_df = load_south_asia()
     if not sa_df.empty:
         st.markdown('<div class="section-title">🌏 SOUTH ASIA SPOTLIGHT</div>', unsafe_allow_html=True)
         st.caption(f"Top {len(sa_df)} South Asian VCT pros by ACS — players with 5+ tracked matches.")
@@ -75,7 +87,7 @@ with f3:
     sort_column = sort_options[sort_label]
 
 # ── LOAD DATA ──
-lb_raw = get_leaderboard(engine, min_matches=5)
+lb_raw = load_leaderboard(5)
 if lb_raw.empty:
     st.warning("No player data available.")
     st.stop()
@@ -90,7 +102,7 @@ lb_raw['name'] = lb_raw['name'].fillna('Unknown')
 st.markdown('<div class="section-title">⚡ SKILL vs CONSISTENCY — THE SCOUT\'S MAP</div>', unsafe_allow_html=True)
 st.caption("Each dot = one player. Filtered players highlighted — others faded. Hover a dot to see the player name.")
 
-dist_df = get_acs_distribution(engine, min_matches=min_matches)
+dist_df = load_acs_distribution(min_matches)
 if not dist_df.empty:
     dist_df['avg_acs'] = pd.to_numeric(dist_df['avg_acs'], errors='coerce').fillna(0)
     dist_df['consistency_score'] = pd.to_numeric(dist_df['consistency_score'], errors='coerce').fillna(0)
