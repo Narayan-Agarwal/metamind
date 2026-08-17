@@ -53,7 +53,7 @@
 | **Metric Engineering** | Form Score (PEAKING/DECLINING/CONSISTENT), Consistency Score (CV-based, 0–100), ACS Percentile Rank |
 | **Dashboard Engineering** | 4-page Streamlit app, crimson/gold VCT theme, Plotly radar/scatter/gauge/donut charts, query-level caching |
 | **Data Pipeline** | ETL across 158 CSVs from 3 Kaggle datasets → 9-table normalised PostgreSQL schema with batch upserts |
-| **Testing & CI/CD** | 26 unit tests across 6 modules, pytest-mock for DB isolation, GitHub Actions CI with PYTHONPATH configuration |
+| **Testing & CI/CD** | 24 unit tests across 6 modules, pytest-mock for DB isolation, GitHub Actions CI with PYTHONPATH configuration |
 
 ---
 
@@ -225,7 +225,7 @@ MetaMind/
 │   ├── form_engine.py        # PEAKING / DECLINING / CONSISTENT
 │   ├── edge_score.py         # Weighted 5-metric edge score
 │   └── insights.py           # Multi-signal insight generation
-├── tests/                    # 26 unit tests — pytest + pytest-mock
+├── tests/                    # 24 unit tests — pytest + pytest-mock
 │   ├── test_consistency.py
 │   ├── test_db_loader.py
 │   ├── test_edge_score.py
