@@ -1,12 +1,15 @@
 # Environment and secrets
 .env
 *.env
+.streamlit/secrets.toml
 
 # Neon / database
 *.pem
 *.key
 
 # Python
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 *.pyo

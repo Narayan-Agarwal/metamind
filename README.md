@@ -1,249 +1,172 @@
-# 🧠 MetaMind — Esports Analytics Platform
+# MetaMind — Esports Analytics Platform
 
-> Built on the complete 2021–2026 VCT dataset — 916 tracked pros, 14,170+ stat rows, and custom analytics covering ACS percentile rankings, consistency scoring, agent profiling, and a South Asia player spotlight.
+Valorant esports (VCT) analytics platform: season data from Kaggle CSV dumps (VCT 2021–2026, Champions Tour 2024, VCT Champions 2025) through a tested ETL into a normalised PostgreSQL schema, served by a four-page Streamlit dashboard with Plotly charts and one-hour query caching.
 
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon%20compatible-4169E1?logo=postgresql&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.30%2B-FF4B4B?logo=streamlit&logoColor=white)
 [![CI](https://github.com/Narayan-Agarwal/metamind/actions/workflows/ci.yml/badge.svg)](https://github.com/Narayan-Agarwal/metamind/actions)
-[![Streamlit](https://img.shields.io/badge/Streamlit-Live%20Demo-ff4b4b?logo=streamlit)](https://metamind-uww554njd8jwjzee7oupfr.streamlit.app/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Tests](https://img.shields.io/badge/Tests-24%20passed-brightgreen)
+![License](https://img.shields.io/badge/License-MIT-green)
 
----
+> This is a **personal analytics project built from public esports stat dumps**, not an official
+> Valorant/ Riot Games product and not affiliated with VLR.gg.
 
-## 📌 Live Demo
+## The problem
 
-🔗 **[metamind-uww554njd8jwjzee7oupfr.streamlit.app](https://metamind-uww554njd8jwjzee7oupfr.streamlit.app/)**
+VCT match and player statistics are published as per-season Kaggle CSV dumps with inconsistent
+schemas, drifted player names and duplicated rows. Turning six seasons of per-match player stats
+into stable player profiles — percentile ranks, consistency measures, form and head-to-head
+comparisons — needs a cleaning pipeline, a normalised warehouse with window-function views, and a
+dashboard on top. MetaMind is that stack, small enough to run on a laptop.
 
----
+## Architecture
 
-## 🏗️ Architecture
-```
-┌─────────────────────────────┐
-│     Kaggle CSV Datasets     │
-│  3 datasets · 158 CSV files │
-│     2021–2026 VCT data      │
-└──────────────┬──────────────┘
-               │
-┌──────────────▼──────────────┐
-│        ETL Pipeline         │
-│  normalize → clean → dedup  │
-│  validate → batch upsert    │
-└──────────────┬──────────────┘
-               │
-┌──────────────▼──────────────┐
-│   Neon PostgreSQL (Cloud)   │
-│  9 tables + 2 materialized  │
-│  views (percentiles, stats) │
-└──────────────┬──────────────┘
-               │
-┌──────────────▼──────────────┐
-│  Streamlit Dashboard        │
-│  4 pages · Plotly charts    │
-│  Radar · Scatter · Gauge    │
-│  1hr query-level caching    │
-└─────────────────────────────┘
+```mermaid
+flowchart LR
+    A["Kaggle season CSVs<br/>vct_2021 … vct_2026 folders,<br/>Champions Tour 2024 folders,<br/>VCT Champions 2025 root CSVs<br/>(downloaded locally)"] -->|"normalise → clean →<br/>dedup → validate"| B["ETL pipeline<br/>data/etl.py → data/db_loader.py<br/>SQLAlchemy batch upserts<br/>(ON CONFLICT)"]
+    C["VLR.gg South Asia event stats<br/>(optional, --full mode,<br/>requests + BeautifulSoup)"] --> B
+    B --> D["PostgreSQL (Neon compatible)<br/>9 tables + 2 materialized views:<br/>mv_player_percentiles,<br/>mv_team_map_winrates"]
+    D --> E["Streamlit dashboard<br/>4 pages · Plotly<br/>st.cache_data(ttl=3600)"]
+    F["analytics/<br/>consistency · form engine ·<br/>edge score · insights"] --> E
 ```
 
----
+**Pipeline:** `python -m data.etl [--full] [--folder vct_2021] [--skip-db] [--limit N]`
 
-## 🎯 Key Technical Highlights
+- **Schema** (`data/schema.sql`): 9 tables — teams, players, tournaments, maps, matches,
+  player_stats, map_results, economy_stats, performance_stats — plus two materialized views
+  (`mv_player_percentiles` with `PERCENT_RANK()`, `mv_team_map_winrates`).
+- **ETL** (`data/etl.py`, `data/db_loader.py`): chunked CSV reading (overview.csv is 100 MB+),
+  name-alias resolution (`data/player_aliases.json`), outlier thresholds from `config.yaml`
+  (e.g. ACS ≤ 600), batch upserts keyed on natural ids.
+- **Analytics** (`analytics/`): CV-based consistency score (0–100), rolling form engine
+  (PEAKING / DECLINING / CONSISTENT), weighted head-to-head edge score, rule-based insight text.
+- **Dashboard** (`app.py`, `pages/`): Home, Player Intelligence, Player Comparison,
+  Global Leaderboard — every DB call cached for 1 hour (`@st.cache_data(ttl=3600)`).
+- **South Asia spotlight**: an optional VLR.gg scraper (`data/fetch/vlr_scraper.py`, run only in
+  `--full` mode; event URLs and a 2-second request delay are configured in `config.yaml`).
 
-| Skill | Evidence |
+## How to run locally
+
+Prerequisites: Python 3.11+ and a PostgreSQL database (a [Neon](https://neon.tech) free-tier
+database works).
+
+```cmd
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\pip install pytest pytest-mock
+copy .env.example .env
+```
+
+Put your connection string in `.env` as `DB_URL=postgresql://user:password@host/dbname`
+(add `?sslmode=require` for Neon — the app also reads `DB_URL` from Streamlit secrets on cloud).
+
+```cmd
+psql -f data\schema.sql "<your-db-url>"
+.venv\Scripts\python -m data.etl --limit 500
+.venv\Scripts\python -m data.etl
+.venv\Scripts\python -m pytest -q
+.venv\Scripts\streamlit run app.py
+```
+
+Notes: the Kaggle CSVs are **not** in this repo — download them locally and lay them out as
+`data\vct_<year>\…` / Champions-Tour folders exactly as expected by
+`data/fetch/kaggle_loader.py` (all paths come from `config.yaml`). `--limit 500` is a safe first
+run; `--full` additionally scrapes VLR.gg. `tests/` needs the database only for nothing — the
+suite is isolated with mocks, so it runs without a DB.
+
+## Tests
+
+24 pytest tests across 6 modules (`tests/`), database calls mocked with pytest-mock.
+Verified 2026-10-06, local run: **24 passed in ~3 s**. The same suite runs in
+[CI](https://github.com/Narayan-Agarwal/metamind/actions) (Python 3.11, `PYTHONPATH=.`).
+
+## Showcase SQL
+
+The dashboard's analytics are SQL-first; the queries live in [`queries/`](queries/) and
+[`db/queries.py`](db/queries.py) (16 query functions):
+
+| Purpose | File |
 |---|---|
-| **Database Design** | 9-entity normalised schema, 2 materialized views with `PERCENT_RANK()` and `STDDEV`-based consistency scoring |
-| **SQL Sophistication** | Window functions (`PERCENT_RANK()`, `AVG() OVER`), CTEs, conditional aggregation, `ON CONFLICT` upserts |
-| **Metric Engineering** | Form Score (PEAKING/DECLINING/CONSISTENT), Consistency Score (CV-based, 0–100), ACS Percentile Rank |
-| **Dashboard Engineering** | 4-page Streamlit app, crimson/gold VCT theme, Plotly radar/scatter/gauge/donut charts, query-level caching |
-| **Data Pipeline** | ETL across 158 CSVs from 3 Kaggle datasets → 9-table normalised PostgreSQL schema with batch upserts |
-| **Testing & CI/CD** | 24 unit tests across 6 modules, pytest-mock for DB isolation, GitHub Actions CI with PYTHONPATH configuration |
+| ACS / KD percentile ranks (`PERCENT_RANK()`) | [`queries/player_percentile.sql`](queries/player_percentile.sql) |
+| Rolling 3-match form window | [`queries/player_form_engine.sql`](queries/player_form_engine.sql) |
+| Regional leaderboard | [`queries/regional_leaderboard.sql`](queries/regional_leaderboard.sql) |
+| Map economy breakdown (conditional aggregation) | [`queries/team_economy_analysis.sql`](queries/team_economy_analysis.sql) |
 
----
-
-## 📊 Data Coverage
-
-| Source | Scope | Scale |
-|---|---|---|
-| **VCT 2021–2023** | 3 full seasons | 11,328 players · per-match stats |
-| **Champions Tour 2024** | 15 regional events + 2 Masters + Champions | Full player/match data |
-| **VCT Champions 2025** | Paris — world championship | Per-map stats, economy, performance |
-
-> **Note:** `economy_stats` and `performance_stats` tables are populated by ETL but excluded from dashboard visualisation due to sparse data quality in the source CSVs. They are retained in the schema for future iteration.
-
----
-
-## 📱 Pages
-
-| Page | What it does |
-|---|---|
-| **Home** | Platform overview, top 5 performers strip, explore cards |
-| **Player Intelligence** | Select any pro — ACS percentile rank, radar profile, agent DNA donut, consistency gauge, form badge |
-| **Player Comparison** | Compare up to 3 players — radar overlay, mirrored stat duel bars, side-by-side gauges |
-| **Scout's Dashboard** | Filter 916 players by consistency tier, skill-vs-consistency scatter map, player lookup, South Asia spotlight |
-
----
-
-## 🚀 Setup Instructions
-
-### Prerequisites
-- Python 3.11+
-- PostgreSQL database (recommend [Neon](https://neon.tech))
-
-### 1. Clone and install
-
-```bash
-git clone https://github.com/Narayan-Agarwal/metamind.git
-cd metamind
-pip install -r requirements.txt
-```
-
-### 2. Configure environment
-
-Create a `.env` file at the project root:
-
-```bash
-DB_URL=postgresql+psycopg://user:password@host/dbname?sslmode=require
-```
-
-### 3. Deploy schema
-
-```bash
-psql $DB_URL -f data/schema.sql
-```
-
-### 4. Run ETL pipeline
-
-```bash
-python -m data.etl
-```
-
-### 5. Launch dashboard
-
-```bash
-streamlit run app.py
-```
-
----
-
-## 🔍 Showcase SQL Queries
-
-### 1. Player Percentile Rankings — PERCENT_RANK()
+Example — percentile ranking with an STDDEV-based consistency score:
 
 ```sql
 WITH base AS (
-    SELECT
-        p.player_id, p.name, p.region,
-        AVG(ps.acs)          AS avg_acs,
-        AVG(ps.kd_ratio)     AS avg_kd,
-        AVG(ps.first_kills)  AS avg_fb,
-        AVG(ps.hs_percent)   AS avg_hs,
-        AVG(ps.kast)         AS avg_kast,
-        COUNT(ps.stat_id)    AS matches_played,
-        100 - (STDDEV(ps.acs) / NULLIF(AVG(ps.acs), 0) * 100) AS consistency_score
+    SELECT p.player_id, p.name, p.region,
+           AVG(ps.acs)      AS avg_acs,
+           AVG(ps.kd_ratio) AS avg_kd,
+           COUNT(ps.stat_id) AS matches_played,
+           100 - (STDDEV(ps.acs) / NULLIF(AVG(ps.acs), 0) * 100) AS consistency_score
     FROM player_stats ps
     JOIN players p ON ps.player_id = p.player_id
     GROUP BY p.player_id, p.name, p.region
     HAVING COUNT(ps.stat_id) >= 5
 )
-SELECT *,
-    PERCENT_RANK() OVER (ORDER BY avg_acs) AS acs_percentile,
-    PERCENT_RANK() OVER (ORDER BY avg_kd)  AS kd_percentile
+SELECT *, PERCENT_RANK() OVER (ORDER BY avg_acs) AS acs_percentile
 FROM base;
 ```
 
-### 2. Consistency Score — CV-Based Stability Metric
+## Data sources
 
-```sql
-SELECT
-    p.name,
-    AVG(ps.acs)    AS avg_acs,
-    STDDEV(ps.acs) AS std_acs,
-    100 - (STDDEV(ps.acs) / NULLIF(AVG(ps.acs), 0) * 100) AS consistency_score
-FROM player_stats ps
-JOIN players p ON ps.player_id = p.player_id
-GROUP BY p.player_id, p.name
-HAVING COUNT(*) >= 5
-ORDER BY consistency_score DESC;
-```
+- **Kaggle VCT season dumps (2021–2026, Champions Tour 2024, VCT Champions 2025)** — downloaded
+  locally as CSV files; this repo does not redistribute them. See the datasets' own terms on
+  Kaggle.
+- **VLR.gg** — event stats pages for the South Asia spotlight, scraped politely (2 s delay,
+  descriptive User-Agent) only when `--full` is used. Public pages; see VLR.gg's own terms.
 
-### 3. Player Form Engine — Rolling Window Analysis
+## Limitations
 
-```sql
-WITH ordered AS (
-    SELECT ps.*, m.match_date,
-        ROW_NUMBER() OVER (ORDER BY m.match_date) AS match_num
-    FROM player_stats ps
-    JOIN matches m ON ps.match_id = m.match_id
-    WHERE ps.player_id = :player_id
-)
-SELECT *,
-    AVG(acs) OVER (
-        ORDER BY match_num ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
-    ) AS rolling_acs_3
-FROM ordered
-ORDER BY match_num;
-```
+- `economy_stats` and `performance_stats` are populated by the ETL but **excluded from the
+  dashboard** because of sparse data quality in the source CSVs; the SQL for them
+  ([`queries/team_economy_analysis.sql`](queries/team_economy_analysis.sql)) is kept for
+  iteration.
+- The APScheduler module (`data/scheduler.py`) exists for automated local ETL runs but is **not
+  started automatically** by the app; nothing runs on a schedule in this repo.
+- No publicly viewable demo is linked here — the Streamlit Community Cloud URL currently sits
+  behind Streamlit's login wall.
+- Row counts (players, matches) are intentionally not quoted: they depend on which season dumps
+  you load, and nothing in the repo pins a fixed dataset.
 
-### 4. Economy Analysis — Conditional Aggregation
+## Deployment (Streamlit Community Cloud)
 
-```sql
--- economy_stats table: populated but excluded from dashboard (sparse data)
-SELECT
-    m.map_name,
-    COUNT(*)                                                   AS games,
-    ROUND(AVG(es.pistol_won::float / NULLIF(2,0) * 100), 1)  AS pistol_win_pct,
-    ROUND(AVG(es.eco_won), 1)                                  AS avg_eco_won,
-    ROUND(AVG(es.full_buy_won), 1)                             AS avg_full_buy_won
-FROM economy_stats es
-JOIN matches mt ON es.match_id = mt.match_id
-JOIN maps m      ON es.map_id  = m.map_id
-WHERE es.team_id = :team_id
-GROUP BY m.map_name
-ORDER BY m.map_name;
-```
+1. The app entrypoint is `app.py` (multipage; pages in `pages/`).
+2. At <https://share.streamlit.io> → **New app** → repo, branch `main`, main file `app.py`.
+3. In **Settings → Secrets** add (TOML): `DB_URL = "postgresql://...your-connection-string..."`.
+4. Deploy. `db/connection.py` reads `st.secrets["DB_URL"]` first, then falls back to `.env`.
 
----
-
-## 📂 Project Structure
+## Project structure
 
 ```
-MetaMind/
-├── app.py                    # Home page — hero, top performers, explore cards
+metamind/
+├── app.py                    # Home page
 ├── pages/
 │   ├── 1_Player.py           # Player Intelligence — radar, agent DNA, gauges
 │   ├── 2_Team_Map.py         # Player Comparison — radar overlay, stat duel bars
-│   └── 3_Leaderboard.py      # Scout's Dashboard — scatter map, scoreboard
+│   └── 3_Leaderboard.py      # Global Leaderboard — scatter map, scoreboard
 ├── data/
 │   ├── schema.sql            # 9 tables + 2 materialized views
-│   ├── fetch/
-│   │   └── kaggle_loader.py  # Reads all Kaggle CSV data (158 files)
-│   ├── etl.py                # Master ETL orchestrator
+│   ├── etl.py                # ETL orchestrator (CLI: --full/--folder/--skip-db/--limit)
 │   ├── db_loader.py          # SQLAlchemy batch upsert engine
-│   └── scheduler.py          # APScheduler ETL runner (local use)
+│   ├── fetch/kaggle_loader.py# Season CSV reader (paths from config.yaml)
+│   ├── fetch/vlr_scraper.py  # Optional VLR.gg South Asia scraper
+│   └── scheduler.py          # APScheduler runner (local use; not auto-started)
 ├── db/
-│   ├── connection.py         # Neon PostgreSQL — lazy streamlit import for CI
+│   ├── connection.py         # DB_URL from st.secrets → env fallback
 │   └── queries.py            # 16 SQL query functions
-├── analytics/
-│   ├── consistency.py        # Consistency Score (CV-based, 0–100)
-│   ├── form_engine.py        # PEAKING / DECLINING / CONSISTENT
-│   ├── edge_score.py         # Weighted 5-metric edge score
-│   └── insights.py           # Multi-signal insight generation
-├── tests/                    # 24 unit tests — pytest + pytest-mock
-│   ├── test_consistency.py
-│   ├── test_db_loader.py
-│   ├── test_edge_score.py
-│   ├── test_etl.py
-│   ├── test_form_engine.py
-│   └── test_queries.py
-└── .github/
-    └── workflows/ci.yml      # GitHub Actions CI — PYTHONPATH=. · Python 3.11
+├── analytics/                # consistency, form engine, edge score, insights
+├── queries/                  # showcase .sql files
+├── tests/                    # 24 pytest tests (mocked DB)
+├── config.yaml               # scraper URLs, ETL thresholds, data paths
+└── .github/workflows/ci.yml  # CI: pytest on Python 3.11
 ```
 
----
+## Licence
 
-## 📜 License
+MIT — see [LICENSE](LICENSE).
 
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-*Built by [Narayan Agarwal](https://github.com/Narayan-Agarwal) as a DA/SWE portfolio project.*
-
-<!-- CI verified green: 18/18 tests passing -->
+*Built by [Narayan Agarwal](https://github.com/Narayan-Agarwal).*
